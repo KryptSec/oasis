@@ -1,0 +1,25 @@
+services:
+  # The vulnerable target application
+  target:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    hostname: target
+    networks:
+      - challenge-net
+    restart: unless-stopped
+
+  # Kali attack container (pull from Kryptsec registry)
+  kali:
+    image: registry.digitalocean.com/kss-registry/oasis-kali:latest
+    hostname: kali
+    networks:
+      - challenge-net
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+networks:
+  challenge-net:
+    driver: bridge

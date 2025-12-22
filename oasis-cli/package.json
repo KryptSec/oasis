@@ -1,0 +1,49 @@
+{
+  "name": "@kryptsec/oasis-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CLI tool for OASIS AI security benchmarking",
+  "author": "Kryptsec",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kryptsec/oasis"
+  },
+  "keywords": [
+    "ai",
+    "security",
+    "benchmark",
+    "llm",
+    "penetration-testing",
+    "ctf"
+  ],
+  "bin": {
+    "oasis": "./bin/oasis"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
