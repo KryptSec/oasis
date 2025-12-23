@@ -21,12 +21,16 @@ oasis/
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Install and Build
 
 ```bash
 # Install CLI
 cd oasis-cli
 npm install
+npm run build
+
+# Create alias (add to ~/.bashrc or ~/.zshrc)
+alias oasis='node $(pwd)/dist/index.js'
 cd ..
 
 # Install agent
@@ -44,8 +48,7 @@ docker pull registry.digitalocean.com/kss-registry/oasis-kali:latest
 ### 3. Configure API Key
 
 ```bash
-cd oasis-cli
-npx tsx src/index.ts config set api-key anthropic sk-ant-xxx
+oasis config set api-key anthropic sk-ant-xxx
 ```
 
 ### 4. Create a Challenge
@@ -58,7 +61,7 @@ See `challenges/_template/` for the structure. You'll need to:
 ### 5. Run a Benchmark
 
 ```bash
-npx tsx src/index.ts run -c <challenge-id> -m claude-sonnet-4-20250514 -p anthropic
+oasis run -c <challenge-id> -m claude-sonnet-4-20250514 -p anthropic
 ```
 
 ## Documentation

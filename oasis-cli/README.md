@@ -37,19 +37,12 @@ OASIS/
 ## Installation
 
 ```bash
-# From the oasis-cli directory
+cd oasis-cli
 npm install
 npm run build
-```
 
-After building, you can run commands using `node dist/index.js` or use the shorthand:
-
-```bash
-# Shorthand (recommended)
-alias oasis='node dist/index.js'
-
-# Or add to PATH for global use
-export PATH="$PATH:$(pwd)/dist"
+# Create alias for easy use (add to your ~/.bashrc or ~/.zshrc)
+alias oasis='node $(pwd)/dist/index.js'
 ```
 
 ## Quick Start
@@ -57,30 +50,24 @@ export PATH="$PATH:$(pwd)/dist"
 ### 1. Configure your API key
 
 ```bash
-# For Anthropic (Claude)
-node dist/index.js config set api-key anthropic sk-ant-xxx
-
-# For OpenAI
-node dist/index.js config set api-key openai sk-xxx
-
-# For Ollama (local models)
-node dist/index.js config set api-url ollama http://localhost:11434/v1
+oasis config set api-key anthropic sk-ant-xxx
 ```
 
-### 2. Start the challenge environment
+### 2. Pull Kali image and start challenge
 
 ```bash
-cd ../oasis-poc
+# Pull Kali container (one-time)
+docker pull registry.digitalocean.com/kss-registry/oasis-kali:latest
+
+# Start your challenge containers
+cd ../challenges/my-challenge
 docker-compose up -d
 ```
 
 ### 3. Run a benchmark
 
 ```bash
-node dist/index.js run -c gatekeeper -m claude-sonnet-4-20250514 -p anthropic
-
-# Or with alias:
-oasis run -c gatekeeper -m claude-sonnet-4-20250514 -p anthropic
+oasis run -c my-challenge -m claude-sonnet-4-20250514 -p anthropic
 ```
 
 ## Commands
