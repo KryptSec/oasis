@@ -28,13 +28,59 @@ export const runCommand = new Command('run')
   .action(async (options) => {
     const { challenge, apiKey, apiUrl, analyze, verbose, submit, verified } = options;
 
-    // Handle verified flag - not yet implemented
+    // Handle verified flag - run on Kryptsec servers
     if (verified) {
-      console.log(colors.yellow(`\n${status.warning} Verified runs are not yet available.`));
-      console.log(colors.gray('  Verified benchmarks run on Kryptsec servers and are eligible for'));
-      console.log(colors.gray('  official leaderboard submissions. Coming soon!'));
-      console.log(colors.gray('\n  For now, run without --verified for local benchmarks.'));
-      process.exit(0);
+      const provider = normalizeProvider(options.provider || getConfigValue('defaultProvider') || 'anthropic');
+      const model = options.model || getConfigValue('defaultModel');
+
+      if (!model) {
+        console.error(colors.red(`\n${status.error} No model specified.`));
+        console.log(colors.gray(`  Set via --model or configure default:`));
+        console.log(colors.gray(`    oasis config set default-model claude-sonnet-4-20250514`));
+        process.exit(1);
+      }
+
+      const resolvedApiKey = apiKey || getApiKey(provider);
+      const requiresApiKey = !['ollama'].includes(provider);
+
+      if (requiresApiKey && !resolvedApiKey) {
+        console.error(colors.red(`\n${status.error} No API key for ${provider}.`));
+        console.log(colors.gray(`  Configure via:`));
+        console.log(colors.gray(`    oasis config set api-key ${provider} <your-key>`));
+        process.exit(1);
+      }
+
+      const resolvedApiUrl = apiUrl || getEffectiveProviderUrl(provider);
+
+      // Load challenge limits
+      const challengePath = pathResolve(CHALLENGES_DIR, challenge);
+      const challengeConfigPath = pathResolve(challengePath, 'challenge.json');
+      let challengeLimits: ChallengeLimits | null = null;
+
+      if (existsSync(challengeConfigPath)) {
+        try {
+          const challengeConfig = JSON.parse(readFileSync(challengeConfigPath, 'utf-8'));
+          if (challengeConfig.limits) {
+            challengeLimits = {
+              expectedIterations: challengeConfig.limits.expectedIterations,
+              maxIterations: challengeConfig.limits.maxIterations,
+              maxTimeSeconds: challengeConfig.limits.maxTimeSeconds,
+            };
+          }
+        } catch (e) {
+          console.warn(colors.yellow(`\n${status.warning} Could not parse challenge limits`));
+        }
+      }
+
+      await runVerifiedBenchmark({
+        challenge,
+        model,
+        provider,
+        apiKey: resolvedApiKey || 'none',
+        apiUrl: resolvedApiUrl,
+        challengeLimits,
+      });
+      return;
     }
 
     // Use config defaults if not provided
@@ -274,6 +320,7 @@ async function runAgent(options: {
     const args = [
       'tsx',
       'run.ts',
+      '--challenge', options.challenge,
       '--provider', agentProvider,
       '--model-id', options.model,
       '--api-key', options.apiKey || 'none',  // Some providers (like Ollama) don't need a key
@@ -401,6 +448,218 @@ async function runAgent(options: {
       reject(error);
     });
   });
+}
+
+interface VerifiedRunOptions {
+  challenge: string;
+  model: string;
+  provider: string;
+  apiKey: string;
+  apiUrl?: string;
+  challengeLimits: ChallengeLimits | null;
+}
+
+interface SpawnResponse {
+  deployment_id: string;
+  lab_url: string;
+  session_token: string;
+  mcp_endpoint: string;
+  expires_at: string;
+}
+
+interface RunResponse {
+  run_id: string;
+  task_id: string;
+  status: string;
+}
+
+interface StatusResponse {
+  status: string;
+  run_id: string;
+  success?: boolean;
+  flag?: string;
+  total_time?: number;
+  iterations?: number;
+  limit_exceeded?: boolean;
+  limit_type?: string;
+  kss_score?: number;
+  efficiency?: number;
+}
+
+async function runVerifiedBenchmark(options: VerifiedRunOptions): Promise<void> {
+  const { challenge, model, provider, apiKey, apiUrl, challengeLimits } = options;
+
+  console.log();
+  console.log(colors.cyan.bold('Verified Run Mode'));
+  console.log(colors.gray('Running on Kryptsec servers for official leaderboard'));
+  console.log();
+
+  // Get OASIS API credentials
+  const oasisApiKey = getApiKey('oasis') || process.env.OASIS_API_KEY;
+  if (!oasisApiKey) {
+    console.error(colors.red(`\n${status.error} OASIS API key required for verified runs`));
+    console.log(colors.gray('  Configure via:'));
+    console.log(colors.gray('    oasis config set api-key oasis <your-key>'));
+    console.log(colors.gray('  Or set OASIS_API_KEY environment variable'));
+    console.log();
+    console.log(colors.gray('  Get an API key at: https://kryptsec.com/oasis/api-keys'));
+    process.exit(1);
+  }
+
+  const middlewareUrl = process.env.OASIS_MIDDLEWARE_URL || 'https://api.kryptsec.com';
+
+  try {
+    // Step 1: Spawn verified lab
+    const spinnerSpawn = ora({
+      text: 'Spawning verified lab environment...',
+      prefixText: status.info,
+    }).start();
+
+    const ttlMinutes = challengeLimits
+      ? Math.ceil(challengeLimits.maxTimeSeconds / 60) + 2
+      : 12;
+
+    const spawnResponse = await fetch(`${middlewareUrl}/api/oasis/spawn`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${oasisApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        challenge_id: challenge,
+        model_id: model,
+        provider: provider,
+        ttl_minutes: ttlMinutes,
+        enable_transcript: true,
+      }),
+    });
+
+    if (!spawnResponse.ok) {
+      const error = await spawnResponse.json() as { detail?: string };
+      spinnerSpawn.fail('Failed to spawn lab');
+      console.error(colors.red(`\n  ${error.detail || 'Unknown error'}`));
+      process.exit(1);
+    }
+
+    const spawnData = await spawnResponse.json() as SpawnResponse;
+    spinnerSpawn.succeed('Verified lab spawned');
+
+    const { deployment_id, expires_at } = spawnData;
+
+    console.log(colors.gray(`  Deployment ID: ${deployment_id}`));
+    console.log(colors.gray(`  Expires: ${new Date(expires_at).toLocaleTimeString()}`));
+    if (challengeLimits) {
+      console.log(colors.gray(`  Limits: ${challengeLimits.maxIterations} iterations, ${challengeLimits.maxTimeSeconds}s max`));
+    }
+    console.log();
+
+    // Step 2: Execute verified run
+    const spinnerRun = ora({
+      text: 'Executing verified benchmark...',
+      prefixText: status.info,
+    }).start();
+
+    const runResponse = await fetch(`${middlewareUrl}/api/oasis/${deployment_id}/run`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${oasisApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ai_provider: provider,
+        ai_model: model,
+        ai_api_key: apiKey,
+        ai_api_url: apiUrl,
+        max_iterations: challengeLimits?.maxIterations || 50,
+        max_time_seconds: challengeLimits?.maxTimeSeconds || 600,
+      }),
+    });
+
+    if (!runResponse.ok) {
+      const error = await runResponse.json() as { detail?: string };
+      spinnerRun.fail('Failed to start run');
+      console.error(colors.red(`\n  ${error.detail || 'Unknown error'}`));
+      process.exit(1);
+    }
+
+    const runData = await runResponse.json() as RunResponse;
+    const { run_id } = runData;
+
+    // Step 3: Poll for completion
+    const pollInterval = 5000; // 5 seconds
+    const maxPollTime = (challengeLimits?.maxTimeSeconds || 600) * 1000 + 120000; // Add 2 min buffer
+    const startPollTime = Date.now();
+
+    while (Date.now() - startPollTime < maxPollTime) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      const statusResponse = await fetch(
+        `${middlewareUrl}/api/oasis/${deployment_id}/run/${run_id}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${oasisApiKey}`,
+          },
+        }
+      );
+
+      if (!statusResponse.ok) continue;
+
+      const statusData = await statusResponse.json() as StatusResponse;
+
+      if (statusData.status === 'completed') {
+        if (statusData.success) {
+          spinnerRun.succeed(colors.green(`Flag captured: ${statusData.flag}`));
+        } else {
+          spinnerRun.fail(colors.yellow('Flag not captured'));
+        }
+
+        // Display limit warnings
+        if (statusData.limit_exceeded) {
+          console.log();
+          console.log(colors.yellow(`${status.warning} Limits exceeded:`));
+          if (statusData.limit_type === 'iterations' || statusData.limit_type === 'both') {
+            console.log(colors.yellow(`  Iterations: ${statusData.iterations} / ${challengeLimits?.maxIterations} max`));
+          }
+          if (statusData.limit_type === 'time' || statusData.limit_type === 'both') {
+            console.log(colors.yellow(`  Time: ${statusData.total_time?.toFixed(1)}s / ${challengeLimits?.maxTimeSeconds}s max`));
+          }
+          console.log(colors.gray(`  Run disqualified from official leaderboard.`));
+        }
+
+        // Print score summary
+        printScoreSummary({
+          kss: statusData.kss_score || 0,
+          efficacy: statusData.success ? 100 : 0,
+          efficiency: statusData.efficiency || 0,
+          time: statusData.total_time || 0,
+        });
+
+        console.log();
+        console.log(colors.gray(`Run ID: ${run_id}`));
+        console.log(colors.cyan.bold(`✓ Verified run submitted to leaderboard`));
+        console.log(colors.gray(`View at: https://oasis.kryptsec.com/leaderboard`));
+        console.log();
+
+        return;
+      }
+    }
+
+    // Timeout waiting for completion
+    spinnerRun.fail('Run timed out waiting for completion');
+    console.log(colors.gray('\n  The run may still be executing. Check status later with:'));
+    console.log(colors.gray(`    curl -H "Authorization: Bearer $OASIS_API_KEY" \\`));
+    console.log(colors.gray(`      ${middlewareUrl}/api/oasis/${deployment_id}/run/${run_id}`));
+
+  } catch (error) {
+    console.error(colors.red(`\n${status.error} Verified run failed`));
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      console.error(colors.red('  Network error - could not reach API'));
+      console.error(colors.gray(`  URL: ${middlewareUrl}`));
+    } else {
+      console.error(colors.red(`  ${error instanceof Error ? error.message : 'Unknown error'}`));
+    }
+    process.exit(1);
+  }
 }
 
 

@@ -42,19 +42,29 @@ npm install
 npm run build
 ```
 
+After building, you can run commands using `node dist/index.js` or use the shorthand:
+
+```bash
+# Shorthand (recommended)
+alias oasis='node dist/index.js'
+
+# Or add to PATH for global use
+export PATH="$PATH:$(pwd)/dist"
+```
+
 ## Quick Start
 
 ### 1. Configure your API key
 
 ```bash
 # For Anthropic (Claude)
-npx tsx src/index.ts config set api-key anthropic sk-ant-xxx
+node dist/index.js config set api-key anthropic sk-ant-xxx
 
 # For OpenAI
-npx tsx src/index.ts config set api-key openai sk-xxx
+node dist/index.js config set api-key openai sk-xxx
 
 # For Ollama (local models)
-npx tsx src/index.ts config set api-url ollama http://localhost:11434/v1
+node dist/index.js config set api-url ollama http://localhost:11434/v1
 ```
 
 ### 2. Start the challenge environment
@@ -67,7 +77,10 @@ docker-compose up -d
 ### 3. Run a benchmark
 
 ```bash
-npx tsx src/index.ts run -c gatekeeper -m claude-sonnet-4-20250514 -p anthropic
+node dist/index.js run -c gatekeeper -m claude-sonnet-4-20250514 -p anthropic
+
+# Or with alias:
+oasis run -c gatekeeper -m claude-sonnet-4-20250514 -p anthropic
 ```
 
 ## Commands
@@ -198,14 +211,17 @@ These commands require internet:
 ## Development
 
 ```bash
-# Run in development mode
+# Run in development mode (uses tsx directly, no build needed)
 npm run dev -- run -c gatekeeper -m claude-sonnet-4-20250514
 
 # Type check
 npm run typecheck
 
-# Build
+# Build for production
 npm run build
+
+# After building, use the compiled version
+node dist/index.js <command>
 ```
 
 ## License
