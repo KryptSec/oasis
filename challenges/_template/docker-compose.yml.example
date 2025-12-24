@@ -9,9 +9,9 @@ services:
       - challenge-net
     restart: unless-stopped
 
-  # Kali attack container (pull from Kryptsec registry)
+  # Kali attack container (pull from Docker Hub)
   kali:
-    image: registry.digitalocean.com/kss-registry/oasis-kali:latest
+    image: kryptsec/oasis-kali:latest
     hostname: kali
     networks:
       - challenge-net

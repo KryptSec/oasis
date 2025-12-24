@@ -42,7 +42,7 @@ cd ..
 ### 2. Pull Kali Image
 
 ```bash
-docker pull registry.digitalocean.com/kss-registry/oasis-kali:latest
+docker pull kryptsec/oasis-kali:latest
 ```
 
 ### 3. Configure API Key

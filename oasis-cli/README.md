@@ -12,7 +12,7 @@ The OASIS CLI allows you to run AI security benchmarks locally against challenge
 - **Docker Desktop** (must be running)
 - **Kali Docker Image** - Pull once:
   ```bash
-  docker pull registry.digitalocean.com/kss-registry/oasis-kali:latest
+  docker pull kryptsec/oasis-kali:latest
   ```
 - **AI API Key** - One of:
   - Anthropic (Claude models)
