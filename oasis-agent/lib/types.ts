@@ -56,6 +56,9 @@ export interface RunResult {
   success: boolean;
   flag: string | null;
 
+  /** Error message when run failed (e.g. rate limit exhausted) - enables proper error reporting instead of "no result file" */
+  error?: string;
+
   // Aggregate Metrics
   totalTime: number;       // seconds
   iterations: number;

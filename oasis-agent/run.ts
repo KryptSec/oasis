@@ -27,6 +27,62 @@ const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
 const RESULTS_DIR = resolve(import.meta.dirname, '../results');
 const CHALLENGES_DIR = resolve(import.meta.dirname, '../challenges');
 
+// Rate limit retry: 3 attempts, exponential backoff (2s, 4s, 8s), respect Retry-After header
+const RATE_LIMIT_MAX_RETRIES = 3;
+const RATE_LIMIT_BASE_DELAY_MS = 2000;
+
+function isRetryableStatus(status: number | undefined): boolean {
+  return status === 429 || (status != null && status >= 500 && status < 600);
+}
+
+function getRetryDelayMs(attempt: number, error: unknown): number {
+  // Prefer Retry-After header if present and reasonable (<= 60s per spec)
+  const err = error as { headers?: Headers | Record<string, string>; response?: { headers?: Headers | Record<string, string> } };
+  const headers = err?.headers ?? err?.response?.headers;
+  if (headers) {
+    const retryAfter = typeof headers.get === 'function'
+      ? headers.get?.('retry-after')
+      : (headers as Record<string, string>)?.['retry-after'];
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10);
+      if (!isNaN(seconds) && seconds > 0 && seconds <= 60) {
+        return seconds * 1000;
+      }
+    }
+  }
+  // Exponential backoff: 2s, 4s, 8s
+  return RATE_LIMIT_BASE_DELAY_MS * Math.pow(2, attempt);
+}
+
+async function withRateLimitRetry<T>(
+  fn: () => Promise<T>,
+  context: string
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const status = (error as { status?: number; statusCode?: number })?.status ?? (error as { status?: number; statusCode?: number })?.statusCode;
+      const isRetryable = isRetryableStatus(status);
+      const hasAttemptsLeft = attempt < RATE_LIMIT_MAX_RETRIES;
+
+      if (!isRetryable || !hasAttemptsLeft) {
+        throw error;
+      }
+
+      const delayMs = getRetryDelayMs(attempt, error);
+      console.log(chalk.yellow(
+        `[Rate limit] ${context}: ${status} on attempt ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES + 1}. ` +
+        `Retrying in ${delayMs / 1000}s...`
+      ));
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
+
 // Challenge configuration loaded from challenge.json
 interface ChallengeConfig {
   id: string;
@@ -300,13 +356,49 @@ async function runClaudeAgent(): Promise<RunResult> {
     iterations++;
     console.log(chalk.blue(`\n--- Iteration ${iterations} ---`));
 
-    const response = await client.messages.create({
-      model: agentConfig.modelId,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [runCommandTool],
-      messages,
-    });
+    let response: Awaited<ReturnType<typeof client.messages.create>>;
+    try {
+      response = await withRateLimitRetry(
+        () => client.messages.create({
+          model: agentConfig.modelId,
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          tools: [runCommandTool],
+          messages,
+        }),
+        `Iteration ${iterations}`
+      );
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red(`\nAPI error after retries (status ${status ?? 'unknown'}): ${errMsg}`));
+      const endTime = new Date();
+      const totalTime = (endTime.getTime() - startTime.getTime()) / 1000;
+      const commands = steps.filter(s => s.command).map(s => s.command!);
+      const stepTechniques = steps.map(s => s.technique || null);
+      return {
+        id: runId,
+        model: agentConfig.provider,
+        modelVersion: agentConfig.modelId,
+        challenge: challengeConfig.id,
+        startTime,
+        endTime,
+        success: false,
+        flag: null,
+        error: status === 429
+          ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} retries`
+          : `API error: ${errMsg}`,
+        totalTime,
+        iterations,
+        tokens: totalTokens,
+        steps,
+        techniquesUsed: getUniqueTechniques(commands),
+        tacticBreakdown: calculateTacticBreakdown(stepTechniques),
+        methodologies: [...new Set(steps.filter(s => s.methodology).map(s => s.methodology!))],
+        toolsUsed: [...new Set(steps.filter(s => s.tool).map(s => s.tool!))],
+        methodologyBreakdown: calculateMethodologyBreakdown(steps),
+      };
+    }
 
     // Track tokens for this response
     const stepInputTokens = response.usage.input_tokens;
@@ -525,12 +617,48 @@ async function runOpenAICompatibleAgent(): Promise<RunResult> {
     iterations++;
     console.log(chalk.blue(`\n--- Iteration ${iterations} ---`));
 
-    const response = await client.chat.completions.create({
-      model: agentConfig.modelId,
-      max_tokens: 4096,
-      messages,
-      tools,
-    });
+    let response: Awaited<ReturnType<typeof client.chat.completions.create>>;
+    try {
+      response = await withRateLimitRetry(
+        () => client.chat.completions.create({
+          model: agentConfig.modelId,
+          max_tokens: 4096,
+          messages,
+          tools,
+        }),
+        `Iteration ${iterations}`
+      );
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red(`\nAPI error after retries (status ${status ?? 'unknown'}): ${errMsg}`));
+      const endTime = new Date();
+      const totalTime = (endTime.getTime() - startTime.getTime()) / 1000;
+      const commands = steps.filter(s => s.command).map(s => s.command!);
+      const stepTechniques = steps.map(s => s.technique || null);
+      return {
+        id: runId,
+        model: agentConfig.provider,
+        modelVersion: agentConfig.modelId,
+        challenge: challengeConfig.id,
+        startTime,
+        endTime,
+        success: false,
+        flag: null,
+        error: status === 429
+          ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} retries`
+          : `API error: ${errMsg}`,
+        totalTime,
+        iterations,
+        tokens: totalTokens,
+        steps,
+        techniquesUsed: getUniqueTechniques(commands),
+        tacticBreakdown: calculateTacticBreakdown(stepTechniques),
+        methodologies: [...new Set(steps.filter(s => s.methodology).map(s => s.methodology!))],
+        toolsUsed: [...new Set(steps.filter(s => s.tool).map(s => s.tool!))],
+        methodologyBreakdown: calculateMethodologyBreakdown(steps),
+      };
+    }
 
     // Track tokens
     const stepInputTokens = response.usage?.prompt_tokens || 0;
@@ -710,6 +838,36 @@ async function main() {
 
   } catch (error) {
     console.error(chalk.red('Error:'), error);
+    // Save minimal partial result so middleware gets proper error reporting instead of "no result file"
+    try {
+      const runId = agentConfig.runId || randomUUID().slice(0, 8);
+      const endTime = new Date();
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const partialResult: RunResult = {
+        id: runId,
+        model: agentConfig.provider,
+        modelVersion: agentConfig.modelId,
+        challenge: challengeConfig.id,
+        startTime: new Date(), // Approximate - we don't have precise start
+        endTime,
+        success: false,
+        flag: null,
+        error: errMsg,
+        totalTime: 0,
+        iterations: 0,
+        tokens: { input: 0, output: 0, total: 0 },
+        steps: [],
+        techniquesUsed: [],
+        tacticBreakdown: {},
+        methodologies: [],
+        toolsUsed: [],
+        methodologyBreakdown: {},
+      };
+      saveResults(partialResult);
+      console.log(chalk.gray('Partial result saved for error reporting.'));
+    } catch (saveErr) {
+      console.error(chalk.red('Failed to save partial result:'), saveErr);
+    }
     process.exit(1);
   }
 }
