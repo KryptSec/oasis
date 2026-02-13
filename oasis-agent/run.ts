@@ -27,61 +27,11 @@ const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
 const RESULTS_DIR = resolve(import.meta.dirname, '../results');
 const CHALLENGES_DIR = resolve(import.meta.dirname, '../challenges');
 
-// Rate limit retry: 3 attempts, exponential backoff (2s, 4s, 8s), respect Retry-After header
-const RATE_LIMIT_MAX_RETRIES = 3;
-const RATE_LIMIT_BASE_DELAY_MS = 2000;
-
-function isRetryableStatus(status: number | undefined): boolean {
-  return status === 429 || (status != null && status >= 500 && status < 600);
-}
-
-function getRetryDelayMs(attempt: number, error: unknown): number {
-  // Prefer Retry-After header if present and reasonable (<= 60s per spec)
-  const err = error as { headers?: Headers | Record<string, string>; response?: { headers?: Headers | Record<string, string> } };
-  const headers = err?.headers ?? err?.response?.headers;
-  if (headers) {
-    const retryAfter = typeof headers.get === 'function'
-      ? headers.get?.('retry-after')
-      : (headers as Record<string, string>)?.['retry-after'];
-    if (retryAfter) {
-      const seconds = parseInt(retryAfter, 10);
-      if (!isNaN(seconds) && seconds > 0 && seconds <= 60) {
-        return seconds * 1000;
-      }
-    }
-  }
-  // Exponential backoff: 2s, 4s, 8s
-  return RATE_LIMIT_BASE_DELAY_MS * Math.pow(2, attempt);
-}
-
-async function withRateLimitRetry<T>(
-  fn: () => Promise<T>,
-  context: string
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      const status = (error as { status?: number; statusCode?: number })?.status ?? (error as { status?: number; statusCode?: number })?.statusCode;
-      const isRetryable = isRetryableStatus(status);
-      const hasAttemptsLeft = attempt < RATE_LIMIT_MAX_RETRIES;
-
-      if (!isRetryable || !hasAttemptsLeft) {
-        throw error;
-      }
-
-      const delayMs = getRetryDelayMs(attempt, error);
-      console.log(chalk.yellow(
-        `[Rate limit] ${context}: ${status} on attempt ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES + 1}. ` +
-        `Retrying in ${delayMs / 1000}s...`
-      ));
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-  throw lastError;
-}
+import {
+  withRateLimitRetry,
+  RATE_LIMIT_MAX_RETRIES,
+  getErrorStatus,
+} from './lib/retry.js';
 
 // Challenge configuration loaded from challenge.json
 interface ChallengeConfig {
@@ -305,6 +255,57 @@ function saveAnalysis(runId: string, analysis: AnalysisResult): void {
   console.log(chalk.gray(`Analysis report saved to: ${reportPath}`));
 }
 
+/** Build partial RunResult for error reporting — single source of truth for all failure paths. */
+function buildPartialResult(opts: {
+  error: unknown;
+  runId?: string;
+  startTime?: Date;
+  endTime?: Date;
+  steps?: Step[];
+  tokens?: TokenUsage;
+  iterations?: number;
+  status?: number;
+  /** Override computed error message (e.g. for main() catch where error is generic) */
+  errorMessage?: string;
+}): RunResult {
+  const runId = opts.runId ?? agentConfig.runId ?? randomUUID().slice(0, 8);
+  const endTime = opts.endTime ?? new Date();
+  const startTime = opts.startTime ?? endTime; // Use same timestamp when unknown — honest over wrong
+  const steps = opts.steps ?? [];
+  const tokens = opts.tokens ?? { input: 0, output: 0, total: 0 };
+  const iterations = opts.iterations ?? 0;
+  const status = opts.status ?? getErrorStatus(opts.error);
+  const errMsg = opts.error instanceof Error ? opts.error.message : String(opts.error);
+
+  const commands = steps.filter(s => s.command).map(s => s.command!);
+  const stepTechniques = steps.map(s => s.technique || null);
+
+  const errorMessage = opts.errorMessage ?? (status === 429
+    ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} retries`
+    : `API error: ${errMsg}`);
+
+  return {
+    id: runId,
+    model: agentConfig.provider,
+    modelVersion: agentConfig.modelId,
+    challenge: challengeConfig.id,
+    startTime,
+    endTime,
+    success: false,
+    flag: null,
+    error: errorMessage,
+    totalTime: startTime !== endTime ? (endTime.getTime() - startTime.getTime()) / 1000 : 0,
+    iterations,
+    tokens,
+    steps,
+    techniquesUsed: getUniqueTechniques(commands),
+    tacticBreakdown: calculateTacticBreakdown(stepTechniques),
+    methodologies: [...new Set(steps.filter(s => s.methodology).map(s => s.methodology!))],
+    toolsUsed: [...new Set(steps.filter(s => s.tool).map(s => s.tool!))],
+    methodologyBreakdown: calculateMethodologyBreakdown(steps),
+  };
+}
+
 // Calculate methodology breakdown
 function calculateMethodologyBreakdown(steps: Step[]): Record<string, { count: number; percentage: number }> {
   const counts: Record<string, number> = {};
@@ -369,35 +370,19 @@ async function runClaudeAgent(): Promise<RunResult> {
         `Iteration ${iterations}`
       );
     } catch (error) {
-      const status = (error as { status?: number })?.status;
+      const status = getErrorStatus(error);
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error(chalk.red(`\nAPI error after retries (status ${status ?? 'unknown'}): ${errMsg}`));
-      const endTime = new Date();
-      const totalTime = (endTime.getTime() - startTime.getTime()) / 1000;
-      const commands = steps.filter(s => s.command).map(s => s.command!);
-      const stepTechniques = steps.map(s => s.technique || null);
-      return {
-        id: runId,
-        model: agentConfig.provider,
-        modelVersion: agentConfig.modelId,
-        challenge: challengeConfig.id,
+      return buildPartialResult({
+        error,
+        runId,
         startTime,
-        endTime,
-        success: false,
-        flag: null,
-        error: status === 429
-          ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} retries`
-          : `API error: ${errMsg}`,
-        totalTime,
-        iterations,
-        tokens: totalTokens,
+        endTime: new Date(),
         steps,
-        techniquesUsed: getUniqueTechniques(commands),
-        tacticBreakdown: calculateTacticBreakdown(stepTechniques),
-        methodologies: [...new Set(steps.filter(s => s.methodology).map(s => s.methodology!))],
-        toolsUsed: [...new Set(steps.filter(s => s.tool).map(s => s.tool!))],
-        methodologyBreakdown: calculateMethodologyBreakdown(steps),
-      };
+        tokens: totalTokens,
+        iterations,
+        status,
+      });
     }
 
     // Track tokens for this response
@@ -629,35 +614,19 @@ async function runOpenAICompatibleAgent(): Promise<RunResult> {
         `Iteration ${iterations}`
       );
     } catch (error) {
-      const status = (error as { status?: number })?.status;
+      const status = getErrorStatus(error);
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error(chalk.red(`\nAPI error after retries (status ${status ?? 'unknown'}): ${errMsg}`));
-      const endTime = new Date();
-      const totalTime = (endTime.getTime() - startTime.getTime()) / 1000;
-      const commands = steps.filter(s => s.command).map(s => s.command!);
-      const stepTechniques = steps.map(s => s.technique || null);
-      return {
-        id: runId,
-        model: agentConfig.provider,
-        modelVersion: agentConfig.modelId,
-        challenge: challengeConfig.id,
+      return buildPartialResult({
+        error,
+        runId,
         startTime,
-        endTime,
-        success: false,
-        flag: null,
-        error: status === 429
-          ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} retries`
-          : `API error: ${errMsg}`,
-        totalTime,
-        iterations,
-        tokens: totalTokens,
+        endTime: new Date(),
         steps,
-        techniquesUsed: getUniqueTechniques(commands),
-        tacticBreakdown: calculateTacticBreakdown(stepTechniques),
-        methodologies: [...new Set(steps.filter(s => s.methodology).map(s => s.methodology!))],
-        toolsUsed: [...new Set(steps.filter(s => s.tool).map(s => s.tool!))],
-        methodologyBreakdown: calculateMethodologyBreakdown(steps),
-      };
+        tokens: totalTokens,
+        iterations,
+        status,
+      });
     }
 
     // Track tokens
@@ -840,29 +809,12 @@ async function main() {
     console.error(chalk.red('Error:'), error);
     // Save minimal partial result so middleware gets proper error reporting instead of "no result file"
     try {
-      const runId = agentConfig.runId || randomUUID().slice(0, 8);
-      const endTime = new Date();
       const errMsg = error instanceof Error ? error.message : String(error);
-      const partialResult: RunResult = {
-        id: runId,
-        model: agentConfig.provider,
-        modelVersion: agentConfig.modelId,
-        challenge: challengeConfig.id,
-        startTime: new Date(), // Approximate - we don't have precise start
-        endTime,
-        success: false,
-        flag: null,
-        error: errMsg,
-        totalTime: 0,
-        iterations: 0,
-        tokens: { input: 0, output: 0, total: 0 },
-        steps: [],
-        techniquesUsed: [],
-        tacticBreakdown: {},
-        methodologies: [],
-        toolsUsed: [],
-        methodologyBreakdown: {},
-      };
+      const partialResult = buildPartialResult({
+        error,
+        errorMessage: errMsg,
+        endTime: new Date(),
+      });
       saveResults(partialResult);
       console.log(chalk.gray('Partial result saved for error reporting.'));
     } catch (saveErr) {
