@@ -1,5 +1,4 @@
-// OASIS Benchmark Runner
-// Extracted from oasis-agent/run.ts — runs benchmarks locally via docker-compose
+// OASIS Benchmark Runner — runs benchmarks locally via docker-compose
 
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
@@ -11,6 +10,7 @@ import { resolve } from 'path';
 import { wasSuccessful } from './classifier.js';
 import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig } from './types.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
+import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
 
 const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
 
@@ -159,13 +159,30 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
         console.log(chalk.blue(`\n--- Iteration ${iterations} ---`));
       }
 
-      const response = await client.messages.create({
-        model: config.modelId,
-        max_tokens: 4096,
-        system: systemPrompt,
-        tools: [runCommandTool],
-        messages,
-      });
+      let response: Awaited<ReturnType<typeof client.messages.create>>;
+      try {
+        response = await withRateLimitRetry(
+          () => client.messages.create({
+            model: config.modelId,
+            max_tokens: 4096,
+            system: systemPrompt,
+            tools: [runCommandTool],
+            messages,
+          }),
+          `Iteration ${iterations}`,
+          config.verbose,
+        );
+      } catch (error) {
+        const status = getErrorStatus(error);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        if (config.verbose) {
+          console.error(chalk.red(`\nAPI error after retries (status ${status ?? 'unknown'}): ${errMsg}`));
+        }
+        agentError = status === 429
+          ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} attempts`
+          : `API error: ${errMsg}`;
+        break;
+      }
 
       const stepInputTokens = response.usage.input_tokens;
       const stepOutputTokens = response.usage.output_tokens;
@@ -344,12 +361,29 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
         console.log(chalk.blue(`\n--- Iteration ${iterations} ---`));
       }
 
-      const response = await client.chat.completions.create({
-        model: config.modelId,
-        max_completion_tokens: 4096,
-        messages,
-        tools,
-      });
+      let response: Awaited<ReturnType<typeof client.chat.completions.create>>;
+      try {
+        response = await withRateLimitRetry(
+          () => client.chat.completions.create({
+            model: config.modelId,
+            max_completion_tokens: 4096,
+            messages,
+            tools,
+          }),
+          `Iteration ${iterations}`,
+          config.verbose,
+        );
+      } catch (error) {
+        const status = getErrorStatus(error);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        if (config.verbose) {
+          console.error(chalk.red(`\nAPI error after retries (status ${status ?? 'unknown'}): ${errMsg}`));
+        }
+        agentError = status === 429
+          ? `Rate limit (429) exceeded after ${RATE_LIMIT_MAX_RETRIES + 1} attempts`
+          : `API error: ${errMsg}`;
+        break;
+      }
 
       const stepInputTokens = response.usage?.prompt_tokens || 0;
       const stepOutputTokens = response.usage?.completion_tokens || 0;
