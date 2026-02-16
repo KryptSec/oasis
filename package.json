@@ -1,0 +1,58 @@
+{
+  "name": "@kryptsec/oasis",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OASIS - Open-source AI security benchmarking CLI. Run LLM penetration testing benchmarks with MITRE ATT&CK analysis.",
+  "author": "Kryptsec",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kryptsec/oasis"
+  },
+  "homepage": "https://oasis.kryptsec.com",
+  "keywords": [
+    "ai",
+    "security",
+    "benchmark",
+    "llm",
+    "penetration-testing",
+    "ctf",
+    "mitre-attack",
+    "owasp",
+    "red-team"
+  ],
+  "bin": {
+    "oasis": "./bin/oasis"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin",
+    "spec"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.3.1",
+    "open": "^11.0.0",
+    "openai": "^4.0.0",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

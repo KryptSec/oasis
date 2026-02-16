@@ -1,0 +1,356 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oasis.kryptsec.com/schemas/challenge/v1.0.0",
+  "title": "OASIS Challenge Configuration",
+  "description": "Schema for OASIS challenge configuration files",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "category",
+    "difficulty",
+    "target",
+    "flagFormat",
+    "description",
+    "containerName",
+    "limits",
+    "scoring",
+    "expectedApproach",
+    "metadata"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Unique identifier (lowercase, hyphenated)"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Human-readable challenge name"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["web", "network", "crypto", "forensics", "misc"],
+      "description": "Challenge category"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["easy", "medium", "hard", "expert"],
+      "description": "Challenge difficulty level"
+    },
+    "target": {
+      "type": "string",
+      "description": "Target URL or IP within container network"
+    },
+    "flagFormat": {
+      "type": "string",
+      "description": "Regex pattern for flag validation"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 1000,
+      "description": "Challenge description (no spoilers)"
+    },
+    "containerName": {
+      "type": "string",
+      "description": "Docker container name for the agent"
+    },
+    "limits": {
+      "type": "object",
+      "required": ["maxIterations", "maxTimeSeconds"],
+      "description": "Hard limits for benchmark runs - exceeding these terminates the run",
+      "properties": {
+        "expectedIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Baseline iteration count (used for 3x multiplier calculation)"
+        },
+        "maxIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Hard limit on iterations - run terminated if exceeded"
+        },
+        "maxTimeSeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "description": "Hard limit on time in seconds - run terminated if exceeded"
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "required": ["version", "objective", "milestones", "qualitative", "penalties"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Scoring rubric version (semver)"
+        },
+        "objective": {
+          "type": "object",
+          "required": ["flagCapture", "timeBonus", "efficiencyBonus"],
+          "properties": {
+            "flagCapture": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Points awarded for capturing the flag"
+            },
+            "timeBonus": {
+              "type": "object",
+              "required": ["maxPoints", "targetSeconds", "decayRate"],
+              "properties": {
+                "maxPoints": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50,
+                  "description": "Maximum time bonus points"
+                },
+                "targetSeconds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Target completion time in seconds"
+                },
+                "decayRate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Points lost per second over target"
+                }
+              }
+            },
+            "efficiencyBonus": {
+              "type": "object",
+              "required": ["maxPoints", "optimalSteps", "penaltyPerStep"],
+              "properties": {
+                "maxPoints": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50,
+                  "description": "Maximum efficiency bonus points"
+                },
+                "optimalSteps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Optimal number of steps"
+                },
+                "penaltyPerStep": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Points lost per extra step"
+                }
+              }
+            }
+          }
+        },
+        "milestones": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "points", "criteria", "order"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z_]+$",
+                "description": "Milestone identifier"
+              },
+              "name": {
+                "type": "string",
+                "description": "Human-readable milestone name"
+              },
+              "points": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Points awarded for achieving milestone"
+              },
+              "criteria": {
+                "type": "string",
+                "description": "Criteria for milestone achievement"
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Display order of milestone"
+              }
+            }
+          }
+        },
+        "qualitative": {
+          "type": "object",
+          "required": ["reconQuality", "techniqueSelection", "adaptability"],
+          "properties": {
+            "reconQuality": {
+              "$ref": "#/definitions/qualitativeMetric"
+            },
+            "techniqueSelection": {
+              "$ref": "#/definitions/qualitativeMetric"
+            },
+            "adaptability": {
+              "$ref": "#/definitions/qualitativeMetric"
+            }
+          }
+        },
+        "penalties": {
+          "type": "object",
+          "required": ["excessiveFailures", "offTargetActivity", "bruteForce"],
+          "properties": {
+            "excessiveFailures": {
+              "type": "object",
+              "required": ["threshold", "penalty"],
+              "properties": {
+                "threshold": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of failures before penalty"
+                },
+                "penalty": {
+                  "type": "integer",
+                  "maximum": 0,
+                  "description": "Points deducted (negative number)"
+                }
+              }
+            },
+            "offTargetActivity": {
+              "type": "object",
+              "required": ["penalty"],
+              "properties": {
+                "penalty": {
+                  "type": "integer",
+                  "maximum": 0,
+                  "description": "Points deducted for off-target activity"
+                }
+              }
+            },
+            "bruteForce": {
+              "type": "object",
+              "required": ["penalty"],
+              "properties": {
+                "penalty": {
+                  "type": "integer",
+                  "maximum": 0,
+                  "description": "Points deducted for brute force attempts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "expectedApproach": {
+      "type": "object",
+      "required": [
+        "vulnerabilityType",
+        "owaspCategory",
+        "expectedTechniques",
+        "optimalPath",
+        "alternativePaths",
+        "antiPatterns"
+      ],
+      "properties": {
+        "vulnerabilityType": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Primary vulnerability categories"
+        },
+        "owaspCategory": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^A[0-9]{2}:[0-9]{4}-.+$"
+          },
+          "description": "OWASP Top 10 category mappings (e.g., A03:2021-Injection)"
+        },
+        "expectedTechniques": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"
+          },
+          "description": "MITRE ATT&CK technique IDs"
+        },
+        "optimalPath": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Step-by-step ideal solution path"
+        },
+        "alternativePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Valid alternative approaches"
+        },
+        "antiPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Behaviors to penalize"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["estimatedTime", "estimatedSteps", "skillLevel", "realWorldRelevance"],
+      "properties": {
+        "estimatedTime": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[min, max] estimated completion time in seconds"
+        },
+        "estimatedSteps": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[min, max] estimated number of steps"
+        },
+        "skillLevel": {
+          "type": "string",
+          "enum": ["junior", "mid", "senior", "expert"],
+          "description": "Target skill level for the challenge"
+        },
+        "realWorldRelevance": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Why this challenge matters in real-world security"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "qualitativeMetric": {
+      "type": "object",
+      "required": ["maxPoints", "criteria"],
+      "properties": {
+        "maxPoints": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "description": "Maximum points for this metric"
+        },
+        "criteria": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Evaluation criteria for the LLM analyzer"
+        }
+      }
+    }
+  }
+}
