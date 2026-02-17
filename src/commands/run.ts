@@ -7,7 +7,8 @@ import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, 
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
-import { resolveProvider, isAnthropicProvider } from '../lib/providers.js';
+import { isAnthropicProvider } from '../lib/providers.js';
+import { runPreflightChecks, checkApiKey } from '../lib/env-check.js';
 import type { ChallengeConfig, RunnerConfig } from '../lib/types.js';
 
 export const runCommand = new Command('run')
@@ -54,6 +55,25 @@ export const runCommand = new Command('run')
       process.exit(1);
     }
 
+    // Validate API key works
+    if (requiresApiKey && resolvedApiKey) {
+      const keyCheck = await checkApiKey(provider, resolvedApiKey, resolvedApiUrl || undefined);
+      if (!keyCheck.ok) {
+        console.error(colors.red(`\n${status.error} Pre-flight check failed`));
+        for (const err of keyCheck.errors) {
+          console.error(colors.red(`  • ${err}`));
+        }
+        if (keyCheck.hints.length > 0) {
+          console.log(colors.gray('\n  Suggestions:'));
+          for (const hint of keyCheck.hints) {
+            console.log(colors.gray(`    ${hint}`));
+          }
+        }
+        console.log();
+        process.exit(1);
+      }
+    }
+
     // For custom provider, require URL
     if (provider === 'custom' && !resolvedApiUrl) {
       console.error(colors.red(`\n${status.error} Custom provider requires API URL.`));
@@ -85,6 +105,26 @@ export const runCommand = new Command('run')
       }
     } else {
       console.error(colors.red(`\n${status.error} No challenge.json found in ${challengePath}`));
+      process.exit(1);
+    }
+
+    // Pre-flight: verify Docker and challenge environment
+    const containerName = challengeConfig.containerName || `${challenge}-kali-1`;
+    const targetUrl = challengeConfig.target?.startsWith('http') ? challengeConfig.target : `http://${challengeConfig.target}`;
+
+    const preflight = runPreflightChecks(challenge, challengePath, containerName, targetUrl);
+    if (!preflight.ok) {
+      console.error(colors.red(`\n${status.error} Pre-flight check failed`));
+      for (const err of preflight.errors) {
+        console.error(colors.red(`  • ${err}`));
+      }
+      if (preflight.hints.length > 0) {
+        console.log(colors.gray('\n  Suggestions:'));
+        for (const hint of preflight.hints) {
+          console.log(colors.gray(`    ${hint}`));
+        }
+      }
+      console.log();
       process.exit(1);
     }
 
