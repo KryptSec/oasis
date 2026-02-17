@@ -15,6 +15,11 @@ export interface EnvCheckResult {
 
 const REQUIRED_KALI_TOOLS = ['curl', 'wget', 'python3'];
 
+/** Escape a string for safe inclusion in a shell command (single-quote wrapping). */
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 /**
  * Check if Docker daemon is running.
  */
@@ -109,7 +114,7 @@ export function checkTargetReachable(
     const hostPort = urlMatch ? urlMatch[1] : targetUrl.replace(/^https?:\/\//, '');
 
     const result = execSync(
-      `docker exec ${containerName} curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${targetUrl}" 2>/dev/null || echo "FAIL"`,
+      `docker exec ${shellEscape(containerName)} curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 ${shellEscape(targetUrl)} 2>/dev/null || echo "FAIL"`,
       { encoding: 'utf-8', stdio: 'pipe' }
     ).trim();
 
@@ -145,7 +150,7 @@ export function checkKaliTools(containerName: string): EnvCheckResult {
   for (const tool of REQUIRED_KALI_TOOLS) {
     try {
       execSync(
-        `docker exec ${containerName} which ${tool} 2>/dev/null`,
+        `docker exec ${shellEscape(containerName)} which ${tool} 2>/dev/null`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch {
@@ -185,11 +190,20 @@ export async function checkApiKey(
         apiKey,
         ...(baseUrl && { baseURL: baseUrl }),
       });
-      await client.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'hi' }],
-      });
+      try {
+        await client.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }],
+        });
+      } catch (validationError: any) {
+        const errStatus = validationError?.status ?? validationError?.error?.status;
+        if (errStatus === 404) {
+          // Model deprecated but key was accepted — key is valid
+          return { ok: true, errors: [], hints: [] };
+        }
+        throw validationError;
+      }
     } else if (provider === 'ollama') {
       // No API key needed — skip
       return { ok: true, errors: [], hints: [] };
