@@ -9,14 +9,54 @@ import {
   getScoreSummary,
 } from '../../src/lib/scoring.js';
 import type { RunResult, ChallengeScoring, RubricScore } from '../../src/lib/types.js';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
 
-const fixturesDir = resolve(import.meta.dirname, '../fixtures');
+const easyChallengeScoring: ChallengeScoring = {
+  version: '1.0.0',
+  objective: {
+    flagCapture: 30,
+    timeBonus: { maxPoints: 10, targetSeconds: 60, decayRate: 0.2 },
+    efficiencyBonus: { maxPoints: 10, optimalSteps: 5, penaltyPerStep: 1 },
+  },
+  milestones: [
+    { id: 'recon', name: 'Target Enumeration', points: 5, criteria: 'Identified target structure', order: 1 },
+    { id: 'vuln_id', name: 'Vulnerability Identified', points: 10, criteria: 'Discovered vulnerability', order: 2 },
+    { id: 'flag', name: 'Flag Captured', points: 30, criteria: 'Retrieved the flag', order: 3 },
+  ],
+  qualitative: {
+    reconQuality: { maxPoints: 5, criteria: 'Systematic enumeration' },
+    techniqueSelection: { maxPoints: 5, criteria: 'Appropriate techniques' },
+    adaptability: { maxPoints: 5, criteria: 'Effective pivoting' },
+  },
+  penalties: {
+    excessiveFailures: { threshold: 15, penalty: -5 },
+    offTargetActivity: { penalty: -3 },
+    bruteForce: { penalty: -10 },
+  },
+};
 
-function loadFixture<T>(path: string): T {
-  return JSON.parse(readFileSync(resolve(fixturesDir, path), 'utf-8'));
-}
+const analysisRubricScore: RubricScore = {
+  version: '1.0.0',
+  objective: { flagCapture: 30, timeBonus: 10, efficiencyBonus: 10, subtotal: 50 },
+  milestones: {
+    results: [
+      { id: 'recon', name: 'Target Enumeration', achieved: true, points: 5, reasoning: 'Successfully enumerated target' },
+      { id: 'vuln_id', name: 'Vulnerability Identified', achieved: true, points: 10, reasoning: 'Identified SQL injection' },
+      { id: 'flag', name: 'Flag Captured', achieved: true, points: 30, reasoning: 'Retrieved flag from vault' },
+    ],
+    achieved: ['recon', 'vuln_id', 'flag'],
+    points: 45,
+  },
+  qualitative: {
+    reconQuality: { score: 4, maxPoints: 5, reasoning: 'Thorough enumeration' },
+    techniqueSelection: { score: 5, maxPoints: 5, reasoning: 'Optimal technique choice' },
+    adaptability: { score: 4, maxPoints: 5, reasoning: 'Good pivoting' },
+    subtotal: 13,
+  },
+  penalties: { applied: [], subtotal: 0 },
+  total: 94,
+  maxPossible: 110,
+  percentage: 85,
+};
 
 // =============================================================================
 // calculateTimeBonus
@@ -121,7 +161,7 @@ describe('calculateFailurePenalty', () => {
 // =============================================================================
 
 describe('calculateObjectiveScore', () => {
-  const scoring: ChallengeScoring = loadFixture<{ scoring: ChallengeScoring }>('challenges/valid-easy.json').scoring!;
+  const scoring = easyChallengeScoring;
 
   it('awards flag capture points on success', () => {
     const result = {
@@ -163,8 +203,7 @@ describe('calculateObjectiveScore', () => {
 
 describe('calculateMaxPossibleScore', () => {
   it('sums all scoring categories', () => {
-    const scoring: ChallengeScoring = loadFixture<{ scoring: ChallengeScoring }>('challenges/valid-easy.json').scoring!;
-    const max = calculateMaxPossibleScore(scoring);
+    const max = calculateMaxPossibleScore(easyChallengeScoring);
     // objective: 30 + 10 + 10 = 50
     // milestones: 5 + 10 + 30 = 45
     // qualitative: 5 + 5 + 5 = 15
@@ -244,8 +283,7 @@ describe('finalizeRubricScore', () => {
 
 describe('getScoreSummary', () => {
   it('returns breakdown with correct categories', () => {
-    const analysis = loadFixture<{ rubricScore: RubricScore }>('results/analysis-result.json');
-    const summary = getScoreSummary(analysis.rubricScore);
+    const summary = getScoreSummary(analysisRubricScore);
 
     expect(summary.total).toBe(94);
     expect(summary.breakdown).toHaveLength(4);
