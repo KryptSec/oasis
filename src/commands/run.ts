@@ -211,6 +211,7 @@ export const runCommand = new Command('run')
         } catch (analysisError) {
           spinnerAnalysis.fail('Analysis failed');
           console.error(colors.red(`  ${analysisError instanceof Error ? analysisError.message : 'Unknown error'}`));
+          console.log(colors.gray(`  Retry later with: oasis analyze ${result.id}`));
         }
       } else {
         // No analysis, just print basic stats

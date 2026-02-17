@@ -113,6 +113,7 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
 
   const runId = randomUUID().slice(0, 8);
   const maxIterations = config.maxIterations || config.challenge.limits?.maxIterations || 50;
+  const maxTimeSeconds = config.challenge.limits?.maxTimeSeconds;
   const startTime = new Date();
   let lastStepTime = startTime;
   const steps: Step[] = [];
@@ -153,6 +154,15 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
   try {
     while (iterations < maxIterations && !foundFlag) {
       iterations++;
+
+      if (maxTimeSeconds) {
+        const elapsed = (Date.now() - startTime.getTime()) / 1000;
+        if (elapsed >= maxTimeSeconds) {
+          agentError = `Time limit exceeded (${elapsed.toFixed(1)}s / ${maxTimeSeconds}s max)`;
+          break;
+        }
+      }
+
       config.onProgress?.(`Agent iteration ${iterations}/${maxIterations}...`);
 
       if (config.verbose) {
@@ -311,6 +321,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
 
   const runId = randomUUID().slice(0, 8);
   const maxIterations = config.maxIterations || config.challenge.limits?.maxIterations || 50;
+  const maxTimeSeconds = config.challenge.limits?.maxTimeSeconds;
   const startTime = new Date();
   let lastStepTime = startTime;
   const steps: Step[] = [];
@@ -355,6 +366,15 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
   try {
     while (iterations < maxIterations && !foundFlag) {
       iterations++;
+
+      if (maxTimeSeconds) {
+        const elapsed = (Date.now() - startTime.getTime()) / 1000;
+        if (elapsed >= maxTimeSeconds) {
+          agentError = `Time limit exceeded (${elapsed.toFixed(1)}s / ${maxTimeSeconds}s max)`;
+          break;
+        }
+      }
+
       config.onProgress?.(`Agent iteration ${iterations}/${maxIterations}...`);
 
       if (config.verbose) {

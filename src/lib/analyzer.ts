@@ -17,6 +17,7 @@ import {
   calculateMaxPossibleScore,
   finalizeRubricScore,
 } from './scoring.js';
+import { withRateLimitRetry } from './retry.js';
 
 // =============================================================================
 // Configuration
@@ -424,12 +425,15 @@ export async function analyzeRun(
   const challengeTarget = options.challengeTarget || `Challenge: ${result.challenge}`;
   const prompt = buildAnalysisPrompt(result, challengeTarget, options.challengeConfig);
 
-  const response = await client.messages.create({
-    model: analyzerModel,
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  const response = await withRateLimitRetry(
+    () => client.messages.create({
+      model: analyzerModel,
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    'Analysis',
+  );
 
   const textContent = response.content.find(c => c.type === 'text');
   if (!textContent || textContent.type !== 'text') {
