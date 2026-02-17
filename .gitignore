@@ -11,10 +11,10 @@ dist/
 !.env.example
 
 # Local results (benchmark outputs)
-results/
+/results/
 
 # Local challenges (downloaded separately)
-challenges/
+/challenges/
 
 # Claude Code
 .claude/
