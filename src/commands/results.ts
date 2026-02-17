@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
-import { colors, status, formatScore, formatTime } from '../lib/display.js';
-import { getResultsDir } from '../lib/config.js';
-import type { RunResult, AnalysisResult } from '../lib/types.js';
+import { colors, status, formatScore, formatTime, formatDifficulty } from '../lib/display.js';
+import { getResultsDir, getChallengesDir } from '../lib/config.js';
+import type { RunResult, AnalysisResult, ChallengeConfig } from '../lib/types.js';
 
 export const resultsCommand = new Command('results')
   .description('View and manage benchmark results');
@@ -132,10 +132,23 @@ resultsCommand
 
 resultsCommand
   .command('compare')
-  .description('Compare two benchmark runs side-by-side')
-  .argument('<id1>', 'First run ID')
-  .argument('<id2>', 'Second run ID')
-  .action((id1, id2) => {
+  .description('Compare benchmark runs side-by-side (two IDs or all runs for a challenge)')
+  .argument('[id1]', 'First run ID (or use --challenge)')
+  .argument('[id2]', 'Second run ID')
+  .option('--challenge <id>', 'Compare all runs for a specific challenge')
+  .action((id1, id2, options) => {
+    // Mode: compare all runs for a challenge
+    if (options.challenge) {
+      compareByChallengeId(options.challenge);
+      return;
+    }
+
+    // Mode: compare two specific runs
+    if (!id1 || !id2) {
+      console.error(colors.red(`\n${status.error} Provide two run IDs or use --challenge <id>`));
+      process.exit(1);
+    }
+
     const path1 = pathResolve(getResultsDir(), `${id1}.json`);
     const path2 = pathResolve(getResultsDir(), `${id2}.json`);
 
@@ -187,3 +200,320 @@ resultsCommand
 
     console.log();
   });
+
+// =============================================================================
+// results summary — Aggregate view grouped by OWASP category
+// =============================================================================
+
+resultsCommand
+  .command('summary')
+  .description('Show aggregate results grouped by OWASP category')
+  .action(() => {
+    const resultsDir = getResultsDir();
+    const challengesDir = getChallengesDir();
+
+    if (!existsSync(resultsDir)) {
+      console.log(colors.gray('\nNo results found. Run a benchmark first.'));
+      return;
+    }
+
+    // Load all results and their analyses
+    const resultFiles = readdirSync(resultsDir)
+      .filter(f => f.endsWith('.json') && !f.includes('.analysis.'));
+
+    if (resultFiles.length === 0) {
+      console.log(colors.gray('\nNo results found.'));
+      return;
+    }
+
+    // Build a map of challenge ID -> OWASP categories from challenge configs
+    const challengeOwasp: Record<string, string[]> = {};
+    const challengeDifficulty: Record<string, string> = {};
+    if (existsSync(challengesDir)) {
+      const dirs = readdirSync(challengesDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && !d.name.startsWith('_'));
+      for (const dir of dirs) {
+        const configPath = pathResolve(challengesDir, dir.name, 'challenge.json');
+        if (existsSync(configPath)) {
+          try {
+            const config: ChallengeConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+            if (config.expectedApproach?.owaspCategory) {
+              challengeOwasp[config.id] = config.expectedApproach.owaspCategory;
+            }
+            challengeDifficulty[config.id] = config.difficulty;
+          } catch {}
+        }
+      }
+    }
+
+    // Collect all run data grouped by challenge
+    interface RunEntry {
+      result: RunResult;
+      analysis: AnalysisResult | null;
+      score: number;
+    }
+    const byChallenge: Record<string, RunEntry[]> = {};
+
+    for (const file of resultFiles) {
+      try {
+        const filePath = pathResolve(resultsDir, file);
+        const result: RunResult = JSON.parse(readFileSync(filePath, 'utf-8'));
+        const analysisPath = pathResolve(resultsDir, file.replace('.json', '.analysis.json'));
+        let analysis: AnalysisResult | null = null;
+        let score = 0;
+
+        if (existsSync(analysisPath)) {
+          try {
+            analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
+            score = analysis!.rubricScore?.total || analysis!.strategy?.overallScore || 0;
+          } catch {}
+        }
+
+        if (!byChallenge[result.challenge]) {
+          byChallenge[result.challenge] = [];
+        }
+        byChallenge[result.challenge].push({ result, analysis, score });
+      } catch {}
+    }
+
+    // Group by OWASP category
+    interface CategorySummary {
+      category: string;
+      challenges: string[];
+      totalRuns: number;
+      successRate: number;
+      bestScore: number;
+      avgScore: number;
+      bestModel: string;
+    }
+
+    const byOwasp: Record<string, CategorySummary> = {};
+    const uncategorized: string[] = [];
+
+    for (const [challengeId, runs] of Object.entries(byChallenge)) {
+      const categories = challengeOwasp[challengeId];
+      if (!categories || categories.length === 0) {
+        uncategorized.push(challengeId);
+      }
+
+      const targetCategories = categories && categories.length > 0
+        ? categories
+        : ['Uncategorized'];
+
+      for (const cat of targetCategories) {
+        if (!byOwasp[cat]) {
+          byOwasp[cat] = {
+            category: cat,
+            challenges: [],
+            totalRuns: 0,
+            successRate: 0,
+            bestScore: 0,
+            avgScore: 0,
+            bestModel: '-',
+          };
+        }
+
+        const summary = byOwasp[cat];
+        if (!summary.challenges.includes(challengeId)) {
+          summary.challenges.push(challengeId);
+        }
+
+        summary.totalRuns += runs.length;
+        const successes = runs.filter(r => r.result.success).length;
+        const totalSuccessRate = successes / runs.length;
+        summary.successRate = Math.round(totalSuccessRate * 100);
+
+        const scoredRuns = runs.filter(r => r.score > 0);
+        if (scoredRuns.length > 0) {
+          const best = scoredRuns.reduce((a, b) => a.score > b.score ? a : b);
+          if (best.score > summary.bestScore) {
+            summary.bestScore = best.score;
+            summary.bestModel = best.result.modelVersion;
+          }
+          summary.avgScore = Math.round(
+            scoredRuns.reduce((sum, r) => sum + r.score, 0) / scoredRuns.length
+          );
+        }
+      }
+    }
+
+    // Sort OWASP categories
+    const sortedCategories = Object.values(byOwasp).sort((a, b) => {
+      // Sort A01, A02, etc. naturally; Uncategorized goes last
+      if (a.category === 'Uncategorized') return 1;
+      if (b.category === 'Uncategorized') return -1;
+      return a.category.localeCompare(b.category);
+    });
+
+    // Display
+    console.log(colors.white.bold('\nOASIS Results Summary\n'));
+    console.log(
+      colors.gray(
+        `${'OWASP Category'.padEnd(35)} ` +
+        `${'Labs'.padEnd(8)} ` +
+        `${'Runs'.padEnd(8)} ` +
+        `${'Success'.padEnd(10)} ` +
+        `${'Best'.padEnd(8)} ` +
+        `${'Avg'.padEnd(8)} ` +
+        `Best Model`
+      )
+    );
+    console.log(colors.gray('─'.repeat(110)));
+
+    let totalChallenges = 0;
+    let totalRuns = 0;
+    let totalScoreSum = 0;
+    let totalScoredCount = 0;
+
+    for (const cat of sortedCategories) {
+      const categoryDisplay = cat.category.length > 33
+        ? cat.category.substring(0, 30) + '...'
+        : cat.category;
+
+      const successStr = cat.successRate > 0
+        ? (cat.successRate >= 75 ? colors.green : cat.successRate >= 50 ? colors.yellow : colors.red)(`${cat.successRate}%`)
+        : colors.gray('-');
+
+      const bestStr = cat.bestScore > 0 ? formatScore(cat.bestScore) : colors.gray('-');
+      const avgStr = cat.avgScore > 0 ? formatScore(cat.avgScore) : colors.gray('-');
+      const modelStr = cat.bestModel !== '-'
+        ? colors.white(cat.bestModel.length > 25 ? cat.bestModel.substring(0, 22) + '...' : cat.bestModel)
+        : colors.gray('-');
+
+      console.log(
+        `  ${colors.cyan(categoryDisplay.padEnd(33))} ` +
+        `${colors.white(cat.challenges.length.toString().padEnd(8))} ` +
+        `${colors.white(cat.totalRuns.toString().padEnd(8))} ` +
+        `${successStr.padEnd(10)} ` +
+        `${bestStr.padEnd(8)} ` +
+        `${avgStr.padEnd(8)} ` +
+        `${modelStr}`
+      );
+
+      totalChallenges += cat.challenges.length;
+      totalRuns += cat.totalRuns;
+      if (cat.avgScore > 0) {
+        totalScoreSum += cat.avgScore;
+        totalScoredCount++;
+      }
+    }
+
+    console.log(colors.gray('─'.repeat(110)));
+    const overallAvg = totalScoredCount > 0 ? Math.round(totalScoreSum / totalScoredCount) : 0;
+    console.log(
+      colors.white(
+        `\n  ${totalChallenges} challenges | ${totalRuns} total runs | ` +
+        `Avg KSS: ${overallAvg > 0 ? overallAvg.toString() : 'N/A'}`
+      )
+    );
+    console.log();
+  });
+
+// =============================================================================
+// compare --challenge: Compare all runs for a specific challenge
+// =============================================================================
+
+function compareByChallengeId(challengeId: string): void {
+  const resultsDir = getResultsDir();
+  const challengesDir = getChallengesDir();
+
+  if (!existsSync(resultsDir)) {
+    console.log(colors.gray('\nNo results found.'));
+    return;
+  }
+
+  // Load challenge config for OWASP category display
+  let owaspLabel = '';
+  const challengeConfigPath = pathResolve(challengesDir, challengeId, 'challenge.json');
+  if (existsSync(challengeConfigPath)) {
+    try {
+      const config: ChallengeConfig = JSON.parse(readFileSync(challengeConfigPath, 'utf-8'));
+      if (config.expectedApproach?.owaspCategory?.[0]) {
+        owaspLabel = ` (${config.expectedApproach.owaspCategory[0]})`;
+      }
+    } catch {}
+  }
+
+  // Find all runs for this challenge
+  interface RunEntry {
+    result: RunResult;
+    analysis: AnalysisResult | null;
+    score: number;
+  }
+  const runs: RunEntry[] = [];
+
+  const files = readdirSync(resultsDir)
+    .filter(f => f.endsWith('.json') && !f.includes('.analysis.'));
+
+  for (const file of files) {
+    try {
+      const filePath = pathResolve(resultsDir, file);
+      const result: RunResult = JSON.parse(readFileSync(filePath, 'utf-8'));
+      if (result.challenge !== challengeId) continue;
+
+      const analysisPath = pathResolve(resultsDir, file.replace('.json', '.analysis.json'));
+      let analysis: AnalysisResult | null = null;
+      let score = 0;
+
+      if (existsSync(analysisPath)) {
+        try {
+          analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
+          score = analysis!.rubricScore?.total || analysis!.strategy?.overallScore || 0;
+        } catch {}
+      }
+
+      runs.push({ result, analysis, score });
+    } catch {}
+  }
+
+  if (runs.length === 0) {
+    console.log(colors.gray(`\nNo runs found for challenge: ${challengeId}`));
+    return;
+  }
+
+  // Sort by score descending, then by time ascending
+  runs.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.result.totalTime - b.result.totalTime;
+  });
+
+  console.log(colors.white.bold(`\nChallenge: ${challengeId}${colors.gray(owaspLabel)}\n`));
+  console.log(
+    colors.gray(
+      `  ${'Model'.padEnd(28)} ` +
+      `${'Result'.padEnd(10)} ` +
+      `${'KSS'.padEnd(8)} ` +
+      `${'Time'.padEnd(10)} ` +
+      `${'Steps'.padEnd(8)} ` +
+      `Approach`
+    )
+  );
+  console.log(colors.gray('  ' + '─'.repeat(85)));
+
+  for (const run of runs) {
+    const model = (run.result.modelVersion || '').length > 26
+      ? run.result.modelVersion.substring(0, 23) + '...'
+      : run.result.modelVersion;
+    const resultStr = run.result.success
+      ? colors.green('SUCCESS')
+      : colors.red('FAILED');
+    const scoreStr = run.score > 0 ? formatScore(run.score) : colors.gray('-');
+    const timeStr = colors.yellow(formatTime(run.result.totalTime));
+    const stepsStr = colors.white(run.result.iterations.toString());
+    const approachStr = run.analysis?.behavior?.approach
+      ? colors.cyan(run.analysis.behavior.approach)
+      : colors.gray('-');
+
+    console.log(
+      `  ${colors.white(model.padEnd(28))} ` +
+      `${resultStr.padEnd(10)} ` +
+      `${scoreStr.padEnd(8)} ` +
+      `${timeStr.padEnd(10)} ` +
+      `${stepsStr.padEnd(8)} ` +
+      `${approachStr}`
+    );
+  }
+
+  console.log(colors.gray(`\n  ${runs.length} run${runs.length !== 1 ? 's' : ''} found.`));
+  console.log();
+}
