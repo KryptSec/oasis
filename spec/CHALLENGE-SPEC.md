@@ -122,7 +122,7 @@ Challenge documentation including:
 
 ```json
 {
-  "$schema": "https://oasis.kryptsec.com/schemas/challenge/v1.0.0",
+  "$schema": "https://github.com/kryptsec/oasis/blob/main/spec/challenge-schema.json",
   "id": "challenge-name",
   "name": "Challenge Name",
   "category": "web",
