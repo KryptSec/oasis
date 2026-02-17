@@ -70,9 +70,9 @@ else:  # efficacy >= 50
 
 ---
 
-## Detailed Rubric Scoring (Enterprise)
+## Detailed Rubric Scoring
 
-For detailed analysis, the enterprise rubric provides granular scoring:
+For detailed analysis, the rubric provides granular scoring:
 
 ### Objective Scoring (Deterministic)
 

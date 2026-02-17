@@ -2,7 +2,9 @@
 
 **Offensive AI Security Intelligence Standard** — Open-source AI security benchmarking.
 
-Measure how well AI models perform offensive security tasks: vulnerability discovery, exploitation, privilege escalation, and more. Get enterprise-grade analysis with MITRE ATT&CK mapping, behavioral scoring, and detailed reports.
+We believe AI security benchmarking should be open, transparent, and community-driven. As AI models become more capable at offensive security tasks, we need clear, reproducible visibility into how they perform — not behind closed doors, but in the open where the security community can verify, contribute, and improve.
+
+Measure how well AI models perform offensive security tasks: vulnerability discovery, exploitation, privilege escalation, and more. Get full analysis with MITRE ATT&CK mapping, behavioral scoring, and detailed reports — all running locally with your own API keys. No account required, no data sent anywhere.
 
 ## Requirements
 
