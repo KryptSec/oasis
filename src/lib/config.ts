@@ -211,10 +211,10 @@ export function listProviderUrls(): Record<string, string> {
 // Default URLs for providers
 const DEFAULT_PROVIDER_URLS: Record<string, string> = {
   anthropic: 'https://api.anthropic.com',
-  openai: 'https://api.openai.com',
-  xai: 'https://api.x.ai',
-  google: 'https://generativelanguage.googleapis.com',
-  ollama: 'http://localhost:11434',
+  openai: 'https://api.openai.com/v1',
+  xai: 'https://api.x.ai/v1',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  ollama: 'http://localhost:11434/v1',
 };
 
 export function getEffectiveProviderUrl(provider: string): string {

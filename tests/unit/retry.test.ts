@@ -7,6 +7,8 @@ import {
   withRateLimitRetry,
   RATE_LIMIT_MAX_RETRIES,
   RATE_LIMIT_BASE_DELAY_MS,
+  QuotaExceededError,
+  isQuotaExceededError,
 } from '../../src/lib/retry.js';
 
 // =============================================================================
@@ -194,5 +196,114 @@ describe('withRateLimitRetry', () => {
 
     expect((outcome as any).caught).toEqual(error429);
     expect(fn).toHaveBeenCalledTimes(RATE_LIMIT_MAX_RETRIES + 1);
+  });
+
+  it('throws QuotaExceededError immediately on quota 429 (no retries)', async () => {
+    const quotaError = { status: 429, code: 'insufficient_quota', message: 'You exceeded your current quota' };
+    const fn = vi.fn().mockRejectedValue(quotaError);
+
+    await expect(withRateLimitRetry(fn, 'test')).rejects.toBeInstanceOf(QuotaExceededError);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries transient rate-limit 429s', async () => {
+    const rateLimitError = { status: 429, code: 'rate_limit_exceeded' };
+    const fn = vi.fn()
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValue('ok');
+
+    vi.useFakeTimers();
+    const promise = withRateLimitRetry(fn, 'test');
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    vi.useRealTimers();
+
+    expect(result).toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('still retries plain 429s with no code', async () => {
+    const plain429 = { status: 429 };
+    const fn = vi.fn()
+      .mockRejectedValueOnce(plain429)
+      .mockResolvedValue('ok');
+
+    vi.useFakeTimers();
+    const promise = withRateLimitRetry(fn, 'test');
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    vi.useRealTimers();
+
+    expect(result).toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+// =============================================================================
+// isQuotaExceededError
+// =============================================================================
+
+describe('isQuotaExceededError', () => {
+  it('returns true for code: insufficient_quota', () => {
+    expect(isQuotaExceededError({ code: 'insufficient_quota' })).toBe(true);
+  });
+
+  it('returns true for nested error.error.code: insufficient_quota', () => {
+    expect(isQuotaExceededError({ error: { code: 'insufficient_quota' } })).toBe(true);
+  });
+
+  it('returns true for message containing "exceeded your current quota"', () => {
+    expect(isQuotaExceededError({ message: 'You exceeded your current quota, please check your plan.' })).toBe(true);
+  });
+
+  it('returns true for message with different casing', () => {
+    expect(isQuotaExceededError({ message: 'You Exceeded Your Current Quota' })).toBe(true);
+  });
+
+  it('returns false for code: rate_limit_exceeded', () => {
+    expect(isQuotaExceededError({ code: 'rate_limit_exceeded' })).toBe(false);
+  });
+
+  it('returns false for plain 429 with no code or message', () => {
+    expect(isQuotaExceededError({ status: 429 })).toBe(false);
+  });
+
+  it('returns false for null', () => {
+    expect(isQuotaExceededError(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(isQuotaExceededError(undefined)).toBe(false);
+  });
+});
+
+// =============================================================================
+// QuotaExceededError
+// =============================================================================
+
+describe('QuotaExceededError', () => {
+  it('is an instance of Error', () => {
+    const err = new QuotaExceededError('test');
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('has correct name', () => {
+    const err = new QuotaExceededError('test');
+    expect(err.name).toBe('QuotaExceededError');
+  });
+
+  it('stores provider', () => {
+    const err = new QuotaExceededError('test', 'openai');
+    expect(err.provider).toBe('openai');
+  });
+
+  it('stores model', () => {
+    const err = new QuotaExceededError('test', 'google', 'gemini-2.0-flash');
+    expect(err.model).toBe('gemini-2.0-flash');
+  });
+
+  it('has correct message', () => {
+    const err = new QuotaExceededError('quota exceeded');
+    expect(err.message).toBe('quota exceeded');
   });
 });

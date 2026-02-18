@@ -49,19 +49,19 @@ describe('getEffectiveProviderUrl', () => {
   });
 
   it('returns openai API URL', () => {
-    expect(getEffectiveProviderUrl('openai')).toBe('https://api.openai.com');
+    expect(getEffectiveProviderUrl('openai')).toBe('https://api.openai.com/v1');
   });
 
   it('returns xai API URL', () => {
-    expect(getEffectiveProviderUrl('xai')).toBe('https://api.x.ai');
+    expect(getEffectiveProviderUrl('xai')).toBe('https://api.x.ai/v1');
   });
 
   it('returns google API URL', () => {
-    expect(getEffectiveProviderUrl('google')).toBe('https://generativelanguage.googleapis.com');
+    expect(getEffectiveProviderUrl('google')).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
   });
 
   it('returns ollama localhost URL', () => {
-    expect(getEffectiveProviderUrl('ollama')).toBe('http://localhost:11434');
+    expect(getEffectiveProviderUrl('ollama')).toBe('http://localhost:11434/v1');
   });
 
   it('resolves aliases (claude -> anthropic URL)', () => {
@@ -69,11 +69,11 @@ describe('getEffectiveProviderUrl', () => {
   });
 
   it('resolves aliases (grok -> xai URL)', () => {
-    expect(getEffectiveProviderUrl('grok')).toBe('https://api.x.ai');
+    expect(getEffectiveProviderUrl('grok')).toBe('https://api.x.ai/v1');
   });
 
   it('resolves aliases (gemini -> google URL)', () => {
-    expect(getEffectiveProviderUrl('gemini')).toBe('https://generativelanguage.googleapis.com');
+    expect(getEffectiveProviderUrl('gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
   });
 
   it('returns empty string for unknown providers', () => {
