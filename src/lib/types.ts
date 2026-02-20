@@ -292,7 +292,7 @@ export interface RunnerConfig {
   apiKey?: string;
   baseUrl?: string;
   challenge: ChallengeConfig;
-  challengeDir: string;
+  challengeDir?: string;
   maxIterations?: number;
   analyze?: boolean;
   analyzerModel?: string;

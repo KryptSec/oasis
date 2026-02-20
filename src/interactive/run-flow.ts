@@ -10,32 +10,89 @@ import {
 import { PROVIDERS } from '../lib/providers.js';
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
-import { runPreflightChecks, checkApiKey } from '../lib/env-check.js';
+import { checkDockerRunning, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
 import { QuotaExceededError } from '../lib/retry.js';
-import { loadLocalChallenges } from './helpers.js';
+import { pullImage, startContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
+import { buildContainerSpec } from '../lib/registry.js';
+import { loadLocalChallenges, loadRegistryChallenges } from './helpers.js';
+import type { ContainerSpec } from '../lib/docker.js';
+import type { RegistryChallengeChoice } from './helpers.js';
+import type { RegistryEntry } from '../lib/registry.js';
 import type { ChallengeConfig, RunnerConfig } from '../lib/types.js';
 
 export async function runBenchmarkFlow(): Promise<void> {
-  // 1. Load challenges
-  const challenges = loadLocalChallenges();
-  if (challenges.length === 0) {
-    console.log(colors.yellow(`\n  ${status.warning} No challenges found.`));
-    console.log(colors.gray(`  Challenge directory: ${getChallengesDir()}`));
-    console.log(colors.gray(`  Download challenges or set the path with: oasis config set challenges-dir <path>\n`));
-    return;
-  }
-
-  // 2. Select challenge
-  const challengeConfig: ChallengeConfig = await select({
-    message: 'Select challenge',
-    choices: challenges.map(c => ({
-      name: `${c.name} ${formatDifficulty(`[${c.difficulty}]`)} ${formatCategory(c.category)} — ${colors.gray(c.description.slice(0, 60))}`,
-      value: c,
-    })),
+  // 1. Select challenge source
+  const source = await select({
+    message: 'Challenge source',
+    choices: [
+      { name: 'Online challenges (registry)', value: 'registry' as const },
+      { name: 'Local directory', value: 'local' as const },
+    ],
   });
 
-  // 3. Select provider
+  let challengeConfig: ChallengeConfig;
+  let containerSpec: ContainerSpec | null = null;
+  let challengeDir: string | undefined;
+  let registryEntry: RegistryEntry | null = null;
+  const isLocalMode = source === 'local';
+
+  if (isLocalMode) {
+    // Load local challenges
+    const challenges = loadLocalChallenges();
+    if (challenges.length === 0) {
+      console.log(colors.yellow(`\n  ${status.warning} No challenges found.`));
+      console.log(colors.gray(`  Challenge directory: ${getChallengesDir()}`));
+      console.log(colors.gray(`  Download challenges or set the path with: oasis config set challenges-dir <path>\n`));
+      return;
+    }
+
+    challengeConfig = await select({
+      message: 'Select challenge',
+      choices: challenges.map(c => ({
+        name: `${c.name} ${formatDifficulty(`[${c.difficulty}]`)} ${formatCategory(c.category)} — ${colors.gray(c.description.slice(0, 60))}`,
+        value: c,
+      })),
+    });
+
+    challengeDir = pathResolve(getChallengesDir(), challengeConfig.id);
+  } else {
+    // Load registry challenges
+    const spinnerFetch = ora({
+      text: 'Fetching challenges from registry...',
+      prefixText: status.info,
+    }).start();
+
+    let registryChoices: RegistryChallengeChoice[];
+    try {
+      registryChoices = await loadRegistryChallenges();
+      spinnerFetch.succeed(`Found ${registryChoices.length} challenges`);
+    } catch (err) {
+      spinnerFetch.fail('Failed to fetch challenge registry');
+      console.error(colors.red(`  ${err instanceof Error ? err.message : 'Unknown error'}`));
+      console.log(colors.gray(`\n  Select "Local directory" to use local challenges instead.\n`));
+      return;
+    }
+
+    if (registryChoices.length === 0) {
+      console.log(colors.yellow(`\n  ${status.warning} No challenges found in registry.\n`));
+      return;
+    }
+
+    const choice = await select({
+      message: 'Select challenge',
+      choices: registryChoices.map(c => ({
+        name: `${c.config.name} ${formatDifficulty(`[${c.config.difficulty}]`)} ${formatCategory(c.config.category)} — ${colors.gray(c.config.description.slice(0, 60))}`,
+        value: c,
+      })),
+    });
+
+    challengeConfig = choice.config;
+    registryEntry = choice.entry;
+    containerSpec = buildContainerSpec(choice.entry);
+  }
+
+  // 2. Select provider
   const providerChoices = Object.entries(PROVIDERS).map(([name, preset]) => {
     const hasKey = name === 'ollama' || !!getApiKey(name);
     const dot = hasKey ? colors.green('●') : colors.gray('○');
@@ -50,7 +107,7 @@ export async function runBenchmarkFlow(): Promise<void> {
   const provider = normalizeProvider(providerName);
   const preset = PROVIDERS[provider] || PROVIDERS[providerName];
 
-  // 4. Select or input model
+  // 3. Select or input model
   let model: string;
   const defaultModel = getConfigValue('defaultModel');
   const knownModels = preset?.models || [];
@@ -88,7 +145,7 @@ export async function runBenchmarkFlow(): Promise<void> {
   }
   model = model.trim();
 
-  // 5. Resolve API key
+  // 4. Resolve API key
   let resolvedApiKey = getApiKey(provider);
   const requiresApiKey = provider !== 'ollama';
 
@@ -132,18 +189,19 @@ export async function runBenchmarkFlow(): Promise<void> {
     resolvedApiUrl = resolvedApiUrl.trim();
   }
 
-  // 6. Analysis toggle
+  // 5. Analysis toggle
   const runAnalysis = await confirm({
     message: 'Run analysis after benchmark?',
     default: true,
   });
 
-  // 7. Summary + confirm
+  // 6. Summary + confirm
   console.log();
   console.log(colors.white.bold('  Benchmark Summary'));
   console.log(colors.gray('  ' + '─'.repeat(40)));
   console.log(`  ${colors.gray('Challenge:')}  ${colors.white(challengeConfig.name)} ${formatDifficulty(`[${challengeConfig.difficulty}]`)}`);
   console.log(`  ${colors.gray('Provider:')}   ${colors.white(provider)} (${model})`);
+  console.log(`  ${colors.gray('Mode:')}       ${isLocalMode ? 'Local' : 'Registry'}`);
   console.log(`  ${colors.gray('Analysis:')}   ${runAnalysis ? colors.green('yes') : colors.gray('no')}`);
   if (challengeConfig.limits) {
     console.log(`  ${colors.gray('Limits:')}     ${challengeConfig.limits.maxIterations} iterations, ${challengeConfig.limits.maxTimeSeconds}s max`);
@@ -157,19 +215,12 @@ export async function runBenchmarkFlow(): Promise<void> {
 
   if (!proceed) return;
 
-  // 8. Pre-flight checks
-  const challengeDir = pathResolve(getChallengesDir(), challengeConfig.id);
-  const containerName = challengeConfig.containerName || `${challengeConfig.id}-kali-1`;
-  const targetUrl = challengeConfig.target?.startsWith('http')
-    ? challengeConfig.target
-    : `http://${challengeConfig.target}`;
-
+  // 7. Pre-flight: validate API key
   const spinnerPreflight = ora({
     text: 'Running pre-flight checks...',
     prefixText: status.info,
   }).start();
 
-  // Check API key validity
   if (requiresApiKey && resolvedApiKey) {
     const keyCheck = await checkApiKey(provider, resolvedApiKey, resolvedApiUrl || undefined);
     if (!keyCheck.ok) {
@@ -185,24 +236,83 @@ export async function runBenchmarkFlow(): Promise<void> {
     }
   }
 
-  // Check Docker + containers
-  const preflight = runPreflightChecks(challengeConfig.id, challengeDir, containerName, targetUrl);
-  if (!preflight.ok) {
-    spinnerPreflight.fail('Pre-flight checks failed');
-    for (const err of preflight.errors) {
+  // Check Docker is running
+  const dockerCheck = checkDockerRunning();
+  if (!dockerCheck.ok) {
+    spinnerPreflight.fail('Docker is not running');
+    for (const err of dockerCheck.errors) {
       console.log(colors.red(`  ${err}`));
     }
-    if (preflight.hints.length > 0) {
-      console.log(colors.gray('\n  Suggestions:'));
-      for (const hint of preflight.hints) {
-        console.log(colors.gray(`    ${hint}`));
-      }
+    for (const hint of dockerCheck.hints) {
+      console.log(colors.gray(`  ${hint}`));
     }
     console.log();
     return;
   }
 
   spinnerPreflight.succeed('Pre-flight checks passed');
+
+  // 8. Start containers
+  const containerName = challengeConfig.containerName || `${challengeConfig.id}-kali-1`;
+  const targetUrl = challengeConfig.target?.startsWith('http')
+    ? challengeConfig.target
+    : `http://${challengeConfig.target}`;
+
+  const spinnerContainers = ora({
+    text: 'Starting containers...',
+    prefixText: status.info,
+  }).start();
+
+  try {
+    if (isLocalMode) {
+      startFromCompose(challengeDir!);
+    } else {
+      spinnerContainers.text = `Pulling ${containerSpec!.targetImage}...`;
+      pullImage(containerSpec!.targetImage);
+      spinnerContainers.text = `Pulling ${containerSpec!.kaliImage}...`;
+      pullImage(containerSpec!.kaliImage);
+      spinnerContainers.text = 'Starting containers...';
+      startContainers(containerSpec!);
+    }
+
+    spinnerContainers.text = 'Waiting for target to be ready...';
+    waitForTarget(containerName, targetUrl);
+    spinnerContainers.succeed('Containers ready');
+  } catch (err) {
+    spinnerContainers.fail('Failed to start containers');
+    console.error(colors.red(`  ${err instanceof Error ? err.message : 'Unknown error'}`));
+    // Cleanup on failure
+    if (!isLocalMode && containerSpec) {
+      cleanup(containerSpec);
+    } else if (isLocalMode && challengeDir) {
+      try { stopFromCompose(challengeDir); } catch { /* ignore */ }
+    }
+    console.log();
+    return;
+  }
+
+  // Post-start checks
+  const postCheck = runPostStartChecks(challengeConfig.id, containerName, targetUrl);
+  if (!postCheck.ok) {
+    console.log(colors.red(`\n  ${status.error} Post-start checks failed:`));
+    for (const err of postCheck.errors) {
+      console.log(colors.red(`  ${err}`));
+    }
+    if (postCheck.hints.length > 0) {
+      console.log(colors.gray('\n  Suggestions:'));
+      for (const hint of postCheck.hints) {
+        console.log(colors.gray(`    ${hint}`));
+      }
+    }
+    // Cleanup
+    if (!isLocalMode && containerSpec) {
+      cleanup(containerSpec);
+    } else if (isLocalMode && challengeDir) {
+      try { stopFromCompose(challengeDir); } catch { /* ignore */ }
+    }
+    console.log();
+    return;
+  }
 
   // 9. Execute benchmark
   const spinnerRun = ora({
@@ -317,5 +427,12 @@ export async function runBenchmarkFlow(): Promise<void> {
   } catch (error) {
     spinnerRun.fail('Benchmark failed');
     console.error(colors.red(`\n  ${error instanceof Error ? error.message : 'Unknown error'}\n`));
+  } finally {
+    // Cleanup containers
+    if (!isLocalMode && containerSpec) {
+      cleanup(containerSpec);
+    } else if (isLocalMode && challengeDir) {
+      try { stopFromCompose(challengeDir); } catch { /* ignore */ }
+    }
   }
 }
