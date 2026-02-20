@@ -1,25 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { buildDockerExecCommand } from '../../src/lib/runner.js';
+import { buildDockerExecInvocation } from '../../src/lib/runner.js';
 
-describe('buildDockerExecCommand', () => {
-  it('wraps container and command in single quotes', () => {
-    const result = buildDockerExecCommand('ls -la', 'gatekeeper-kali-1');
-    expect(result).toBe("docker exec 'gatekeeper-kali-1' bash -c 'ls -la'");
+describe('buildDockerExecInvocation', () => {
+  it('uses docker exec with stdin script mode (no bash -c)', () => {
+    const invocation = buildDockerExecInvocation('ls -la', 'gatekeeper-kali-1');
+
+    expect(invocation.command).toBe('docker');
+    expect(invocation.args).toEqual(['exec', '-i', 'gatekeeper-kali-1', 'bash']);
+    expect(invocation.args).not.toContain('-c');
+    expect(invocation.input).toBe('ls -la');
   });
 
-  it('escapes single quotes in containerName', () => {
-    const result = buildDockerExecCommand('id', "evil'name");
-    expect(result).toBe("docker exec 'evil'\\''name' bash -c 'id'");
+  it('preserves edge-case shell characters in command input', () => {
+    const edgeCases = [
+      'echo `whoami`',
+      'echo $(date)',
+      'echo $USER',
+      'echo "test\\ntest"',
+      'echo \\\\$escaped',
+      'printf "line1\\nline2\\n"',
+    ];
+
+    for (const command of edgeCases) {
+      const invocation = buildDockerExecInvocation(command, 'kali');
+      expect(invocation.input).toBe(command);
+    }
   });
 
-  it('escapes single quotes in command text', () => {
-    const result = buildDockerExecCommand("echo 'hello'", 'kali');
-    expect(result).toBe("docker exec 'kali' bash -c 'echo '\\''hello'\\'''");
-  });
-
-  it('prevents containerName shell-breakout patterns from becoming bare tokens', () => {
-    const result = buildDockerExecCommand('ls -la', "test'; rm -rf /tmp/test; echo 'foo\"");
-    expect(result).toContain("docker exec 'test'\\''; rm -rf /tmp/test; echo '\\''foo\"' bash -c 'ls -la'");
-    expect(result).not.toContain("docker exec test';");
+  it('passes containerName as argv token instead of shell interpolation', () => {
+    const maliciousContainer = "test'; rm -rf /tmp/test; echo 'foo\"";
+    const invocation = buildDockerExecInvocation('id', maliciousContainer);
+    expect(invocation.args[2]).toBe(maliciousContainer);
   });
 });
