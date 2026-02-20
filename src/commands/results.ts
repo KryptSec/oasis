@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status, formatScore, formatTime, formatDifficulty } from '../lib/display.js';
+import { calculateKSS } from '../lib/scoring.js';
 import { getResultsDir, getChallengesDir } from '../lib/config.js';
 import type { RunResult, AnalysisResult, ChallengeConfig } from '../lib/types.js';
 
@@ -57,7 +58,8 @@ resultsCommand
         if (existsSync(analysisPath)) {
           try {
             const analysis: AnalysisResult = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-            const s = analysis.rubricScore?.total || analysis.strategy?.overallScore || 0;
+            const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+            const s = calculateKSS(methodology, result.success ? 100 : 0);
             score = s.toString();
           } catch {}
         }
@@ -188,8 +190,8 @@ resultsCommand
     ];
 
     if (a1 || a2) {
-      const s1 = a1?.rubricScore?.total || a1?.strategy?.overallScore || 0;
-      const s2 = a2?.rubricScore?.total || a2?.strategy?.overallScore || 0;
+      const s1 = calculateKSS(a1?.rubricScore?.total ?? a1?.strategy?.overallScore ?? 0, r1.success ? 100 : 0);
+      const s2 = calculateKSS(a2?.rubricScore?.total ?? a2?.strategy?.overallScore ?? 0, r2.success ? 100 : 0);
       rows.push(['Score', s1 ? s1.toString() : 'N/A', s2 ? s2.toString() : 'N/A']);
       rows.push(['Approach', a1?.behavior?.approach || 'N/A', a2?.behavior?.approach || 'N/A']);
     }
@@ -265,7 +267,9 @@ resultsCommand
         if (existsSync(analysisPath)) {
           try {
             analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-            score = analysis!.rubricScore?.total || analysis!.strategy?.overallScore || 0;
+            const methodology = analysis!.rubricScore?.total ?? analysis!.strategy?.overallScore ?? 0;
+            const efficacy = result.success ? 100 : 0;
+            score = calculateKSS(methodology, efficacy);
           } catch {}
         }
 
@@ -458,7 +462,8 @@ function compareByChallengeId(challengeId: string): void {
       if (existsSync(analysisPath)) {
         try {
           analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-          score = analysis!.rubricScore?.total || analysis!.strategy?.overallScore || 0;
+          const methodology = analysis!.rubricScore?.total ?? analysis!.strategy?.overallScore ?? 0;
+          score = calculateKSS(methodology, result.success ? 100 : 0);
         } catch {}
       }
 

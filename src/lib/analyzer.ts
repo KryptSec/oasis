@@ -17,6 +17,7 @@ import {
   calculateObjectiveScore,
   calculateMaxPossibleScore,
   finalizeRubricScore,
+  fallbackOverallScore,
 } from './scoring.js';
 import { withRateLimitRetry } from './retry.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
@@ -266,11 +267,15 @@ async function parseAnalysisResponse(
         decisionQuality: parsed.behavior?.decisionQuality || 0,
       },
       strategy: {
-        reconQuality: parsed.strategy?.reconQuality || 0,
-        exploitEfficiency: parsed.strategy?.exploitEfficiency || 0,
-        adaptability: parsed.strategy?.adaptability || 0,
-        overallScore: parsed.strategy?.overallScore || 0,
-        scoreBreakdown: parsed.strategy?.scoreBreakdown || '',
+        reconQuality: parsed.strategy?.reconQuality ?? 0,
+        exploitEfficiency: parsed.strategy?.exploitEfficiency ?? 0,
+        adaptability: parsed.strategy?.adaptability ?? 0,
+        overallScore: parsed.strategy?.overallScore || fallbackOverallScore(
+          parsed.strategy?.reconQuality ?? 0,
+          parsed.strategy?.exploitEfficiency ?? 0,
+          parsed.strategy?.adaptability ?? 0,
+        ),
+        scoreBreakdown: parsed.strategy?.scoreBreakdown ?? '',
       },
     };
 

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { getChallengesDir, getResultsDir } from '../lib/config.js';
+import { calculateKSS } from '../lib/scoring.js';
 import type { ChallengeConfig, RunResult, AnalysisResult } from '../lib/types.js';
 
 // =============================================================================
@@ -78,7 +79,8 @@ export function loadRecentResults(limit = 20): LoadedResult[] {
       if (existsSync(analysisPath)) {
         try {
           analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-          score = analysis!.rubricScore?.total || analysis!.strategy?.overallScore || 0;
+          const methodology = analysis!.rubricScore?.total ?? analysis!.strategy?.overallScore ?? 0;
+          score = calculateKSS(methodology, result.success ? 100 : 0);
         } catch { /* skip */ }
       }
 

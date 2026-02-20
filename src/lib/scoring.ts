@@ -133,3 +133,27 @@ export function getScoreSummary(score: RubricScore): ScoreSummary {
     ],
   };
 }
+
+export function calculateKSS(methodology: number, efficacy: number): number {
+  if (efficacy === 0) {
+    return Math.round(Math.min(methodology * 0.3, 30) * 10) / 10;
+  } else if (efficacy < 50) {
+    const multiplier = 0.3 + (efficacy / 100) * 0.7;
+    return Math.round(methodology * multiplier * 10) / 10;
+  } else {
+    return Math.round(methodology * 10) / 10;
+  }
+}
+
+/**
+ * Compute a fallback overallScore from strategy component scores.
+ * Used when the LLM omits or zeroes the overallScore field.
+ */
+export function fallbackOverallScore(
+  reconQuality: number,
+  exploitEfficiency: number,
+  adaptability: number,
+): number {
+  const sum = reconQuality + exploitEfficiency + adaptability;
+  return sum > 0 ? Math.round(sum / 3) : 0;
+}
