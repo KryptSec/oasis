@@ -1,0 +1,163 @@
+/**
+ * OASIS Container Lifecycle Manager
+ * Handles pulling images, creating networks, running containers,
+ * health-checking, and cleanup for both registry and local modes.
+ */
+
+import { execSync } from 'child_process';
+
+export interface ContainerSpec {
+  challengeId: string;
+  targetImage: string;
+  kaliImage: string;
+  network: string;
+  kaliContainerName: string;
+  targetContainerName: string;
+}
+
+/** Escape a string for safe inclusion in a shell command (single-quote wrapping). */
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * Pull a Docker image. Streams progress lines to onProgress if provided.
+ */
+export function pullImage(image: string, onProgress?: (line: string) => void): void {
+  if (onProgress) {
+    onProgress(`Pulling ${image}...`);
+  }
+  execSync(`docker pull ${shellEscape(image)}`, {
+    stdio: onProgress ? 'inherit' : 'pipe',
+    encoding: 'utf-8',
+  });
+}
+
+/**
+ * Ensure a Docker network exists, creating it if necessary.
+ */
+export function ensureNetwork(name: string): void {
+  try {
+    execSync(`docker network inspect ${shellEscape(name)}`, {
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+  } catch {
+    execSync(`docker network create ${shellEscape(name)}`, {
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+  }
+}
+
+/**
+ * Start containers from a ContainerSpec using docker run.
+ * Cleans up stale containers first, ensures the network, then runs both.
+ */
+export function startContainers(spec: ContainerSpec): void {
+  cleanupStale(spec);
+  ensureNetwork(spec.network);
+
+  // Start target container
+  execSync(
+    `docker run -d --name ${shellEscape(spec.targetContainerName)} ` +
+    `--hostname target --network ${shellEscape(spec.network)} ` +
+    `${shellEscape(spec.targetImage)}`,
+    { stdio: 'pipe', encoding: 'utf-8' }
+  );
+
+  // Start kali container
+  execSync(
+    `docker run -d --name ${shellEscape(spec.kaliContainerName)} ` +
+    `--hostname kali --network ${shellEscape(spec.network)} ` +
+    `${shellEscape(spec.kaliImage)} sleep infinity`,
+    { stdio: 'pipe', encoding: 'utf-8' }
+  );
+}
+
+/**
+ * Wait for the target to be reachable from the kali container.
+ * Polls with curl every 2 seconds until success or timeout.
+ */
+export function waitForTarget(
+  kaliContainer: string,
+  targetUrl: string,
+  timeoutMs = 30000
+): void {
+  const start = Date.now();
+  const pollInterval = 2000;
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      execSync(
+        `docker exec ${shellEscape(kaliContainer)} curl -sf ${shellEscape(targetUrl)}`,
+        { stdio: 'pipe', encoding: 'utf-8', timeout: 5000 }
+      );
+      return; // Success
+    } catch {
+      // Not ready yet — wait and retry
+      execSync(`sleep 2`, { stdio: 'pipe' });
+    }
+  }
+
+  throw new Error(
+    `Target ${targetUrl} not reachable from ${kaliContainer} after ${timeoutMs / 1000}s`
+  );
+}
+
+/**
+ * Remove containers and network for a spec. Ignores errors (containers may not exist).
+ */
+export function cleanup(spec: ContainerSpec): void {
+  try {
+    execSync(
+      `docker rm -f ${shellEscape(spec.targetContainerName)} ${shellEscape(spec.kaliContainerName)}`,
+      { stdio: 'pipe', encoding: 'utf-8' }
+    );
+  } catch {
+    // Containers may not exist
+  }
+
+  try {
+    execSync(`docker network rm ${shellEscape(spec.network)}`, {
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+  } catch {
+    // Network may be shared or already removed
+  }
+}
+
+/**
+ * Remove stale containers (if they exist) before starting fresh ones.
+ */
+export function cleanupStale(spec: ContainerSpec): void {
+  try {
+    execSync(
+      `docker rm -f ${shellEscape(spec.targetContainerName)} ${shellEscape(spec.kaliContainerName)} 2>/dev/null`,
+      { stdio: 'pipe', encoding: 'utf-8' }
+    );
+  } catch {
+    // Ignore — containers may not exist
+  }
+}
+
+/**
+ * Start containers from a docker-compose.yml in the given directory.
+ */
+export function startFromCompose(challengeDir: string): void {
+  execSync(`docker compose -f ${shellEscape(challengeDir)}/docker-compose.yml up -d --build`, {
+    stdio: 'inherit',
+    encoding: 'utf-8',
+  });
+}
+
+/**
+ * Stop and remove containers from a docker-compose.yml in the given directory.
+ */
+export function stopFromCompose(challengeDir: string): void {
+  execSync(`docker compose -f ${shellEscape(challengeDir)}/docker-compose.yml down`, {
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+}
