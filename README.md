@@ -28,7 +28,23 @@ Or run directly:
 npx @kryptsec/oasis --help
 ```
 
-## Quick Start
+## Interactive Mode
+
+Run `oasis` with no arguments to launch an interactive menu:
+
+```bash
+oasis
+```
+
+The interactive mode guides you through:
+- **Run Benchmark** — Select challenge, choose AI provider/model, configure API keys, run benchmark, get analysis
+- **View Results** — Browse past benchmark runs, view detailed reports and MITRE ATT&CK mappings
+- **Configure API Keys** — Add/remove API keys for different providers, set defaults
+- **Advanced Mode** — View CLI command reference for power users
+
+Interactive mode works in terminals (TTY). In non-interactive environments (CI, pipes), `oasis` falls back to standard help text.
+
+## Quick Start (CLI)
 
 ### 1. Configure your API key
 
