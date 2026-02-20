@@ -18,12 +18,21 @@ const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
 // Command Execution
 // =============================================================================
 
+/** Escape a string for safe inclusion in a shell command (single-quote wrapping). */
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+export function buildDockerExecCommand(command: string, containerName: string): string {
+  return `docker exec ${shellEscape(containerName)} bash -c ${shellEscape(command)}`;
+}
+
 function executeCommand(command: string, containerName: string, verbose: boolean): string {
   if (verbose) {
     console.log(chalk.yellow(`\n> ${command}`));
   }
   try {
-    const execCommand = `docker exec ${containerName} bash -c "${command.replace(/"/g, '\\"')}"`;
+    const execCommand = buildDockerExecCommand(command, containerName);
     const result = execSync(execCommand, {
       encoding: 'utf-8',
       timeout: 60000,
