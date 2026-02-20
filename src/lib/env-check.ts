@@ -243,9 +243,6 @@ export function runPreflightChecks(
   containerName: string,
   targetUrl: string
 ): EnvCheckResult {
-  const allErrors: string[] = [];
-  const allHints: string[] = [];
-
   // 1. Docker running
   const dockerCheck = checkDockerRunning();
   if (!dockerCheck.ok) {
@@ -265,6 +262,37 @@ export function runPreflightChecks(
   }
 
   // 4. Kali tools
+  const toolsCheck = checkKaliTools(containerName);
+  if (!toolsCheck.ok) {
+    return toolsCheck;
+  }
+
+  return { ok: true, errors: [], hints: [] };
+}
+
+/**
+ * Run post-start checks after containers have been launched by the CLI.
+ * Checks 2-4 from preflight: containers running, target reachable, kali tools.
+ * (Docker is already confirmed running at this point.)
+ */
+export function runPostStartChecks(
+  challengeId: string,
+  containerName: string,
+  targetUrl: string
+): EnvCheckResult {
+  // Containers running
+  const containerCheck = checkContainersRunning(challengeId, containerName);
+  if (!containerCheck.ok) {
+    return containerCheck;
+  }
+
+  // Target reachable
+  const reachCheck = checkTargetReachable(containerName, targetUrl);
+  if (!reachCheck.ok) {
+    return reachCheck;
+  }
+
+  // Kali tools
   const toolsCheck = checkKaliTools(containerName);
   if (!toolsCheck.ok) {
     return toolsCheck;

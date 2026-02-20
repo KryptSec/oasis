@@ -2,10 +2,12 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { getChallengesDir, getResultsDir } from '../lib/config.js';
 import { calculateKSS } from '../lib/scoring.js';
+import { fetchRegistryIndex, fetchChallengeConfig } from '../lib/registry.js';
+import type { RegistryEntry } from '../lib/registry.js';
 import type { ChallengeConfig, RunResult, AnalysisResult } from '../lib/types.js';
 
 // =============================================================================
-// Challenge Loader
+// Challenge Loader (Local)
 // =============================================================================
 
 export function loadLocalChallenges(): ChallengeConfig[] {
@@ -37,6 +39,43 @@ export function loadLocalChallenges(): ChallengeConfig[] {
   });
 
   return challenges;
+}
+
+// =============================================================================
+// Challenge Loader (Registry)
+// =============================================================================
+
+export interface RegistryChallengeChoice {
+  entry: RegistryEntry;
+  config: ChallengeConfig;
+}
+
+/**
+ * Fetch challenges from the online registry.
+ * Returns registry entries paired with their full challenge configs.
+ */
+export async function loadRegistryChallenges(): Promise<RegistryChallengeChoice[]> {
+  const index = await fetchRegistryIndex();
+  const choices: RegistryChallengeChoice[] = [];
+
+  for (const entry of index.challenges) {
+    try {
+      const config = await fetchChallengeConfig(entry);
+      choices.push({ entry, config });
+    } catch {
+      // Skip challenges whose config can't be fetched
+    }
+  }
+
+  const difficultyOrder: Record<string, number> = { easy: 0, medium: 1, hard: 2, expert: 3 };
+  choices.sort((a, b) => {
+    const diffA = difficultyOrder[a.config.difficulty.toLowerCase()] ?? 99;
+    const diffB = difficultyOrder[b.config.difficulty.toLowerCase()] ?? 99;
+    if (diffA !== diffB) return diffA - diffB;
+    return a.config.name.localeCompare(b.config.name);
+  });
+
+  return choices;
 }
 
 // =============================================================================
