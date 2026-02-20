@@ -56,7 +56,13 @@
     },
     "containerName": {
       "type": "string",
-      "description": "Docker container name for the agent"
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^(?!-)[A-Za-z0-9_-]+$",
+      "not": {
+        "enum": ["host", "none", "bridge"]
+      },
+      "description": "Docker container name for the agent (letters, numbers, hyphens, underscores; cannot start with hyphen)"
     },
     "limits": {
       "type": "object",

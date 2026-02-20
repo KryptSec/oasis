@@ -48,14 +48,29 @@ export const validateCommand = new Command('validate')
     process.exit(result.valid ? 0 : 1);
   });
 
-interface ValidationResult {
+export interface ValidationResult {
   challenge: string;
   valid: boolean;
   errors: string[];
   warnings: string[];
 }
 
-function validateChallenge(challengePath: string, challengeName: string): ValidationResult {
+const SAFE_CONTAINER_NAME_PATTERN = /^(?!-)[A-Za-z0-9_-]{1,63}$/;
+const RESERVED_CONTAINER_NAMES = new Set(['host', 'none', 'bridge']);
+
+function validateContainerName(containerName: string): string | null {
+  if (!SAFE_CONTAINER_NAME_PATTERN.test(containerName)) {
+    return `Invalid containerName "${containerName}". Must be 1-63 characters, use only letters/numbers/hyphens/underscores, and cannot start with a hyphen.`;
+  }
+
+  if (RESERVED_CONTAINER_NAMES.has(containerName.toLowerCase())) {
+    return `Invalid containerName "${containerName}". Reserved Docker network names are not allowed: host, none, bridge.`;
+  }
+
+  return null;
+}
+
+export function validateChallenge(challengePath: string, challengeName: string): ValidationResult {
   const result: ValidationResult = {
     challenge: challengeName,
     valid: true,
@@ -136,6 +151,15 @@ function validateChallenge(challengePath: string, challengeName: string): Valida
   if (config.difficulty && !validDifficulties.includes(config.difficulty)) {
     result.errors.push(`Invalid difficulty "${config.difficulty}". Must be one of: ${validDifficulties.join(', ')}`);
     result.valid = false;
+  }
+
+  // Validate container name safety constraints
+  if (config.containerName) {
+    const containerNameError = validateContainerName(config.containerName);
+    if (containerNameError) {
+      result.errors.push(containerNameError);
+      result.valid = false;
+    }
   }
 
   // Validate flag format is a valid regex
