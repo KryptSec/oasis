@@ -21,6 +21,7 @@ export interface OasisConfig {
   analyzerModel?: string;
   challengesDir?: string;   // Path to challenges directory (default: ./challenges in cwd)
   resultsDir?: string;      // Path to results directory (default: ./results in cwd)
+  registryUrl?: string;     // Custom challenge registry URL (default: GitHub oasis-challenges)
   apiBaseUrl?: string;
   providerUrls?: Record<string, string>;
 }
@@ -58,7 +59,7 @@ export function saveConfig(config: OasisConfig): void {
 }
 
 // String-only config keys
-export type StringConfigKey = 'defaultProvider' | 'defaultModel' | 'analyzerModel' | 'challengesDir' | 'resultsDir' | 'apiBaseUrl';
+export type StringConfigKey = 'defaultProvider' | 'defaultModel' | 'analyzerModel' | 'challengesDir' | 'resultsDir' | 'registryUrl' | 'apiBaseUrl';
 
 // Directory resolution — challenges and results are relative to cwd, not the package
 export function getChallengesDir(): string {
@@ -77,6 +78,16 @@ export function getResultsDir(): string {
 
 export function getConfigDir(): string {
   return CONFIG_DIR;
+}
+
+// Registry URL resolution: config → env var → default
+const DEFAULT_REGISTRY_URL = 'https://raw.githubusercontent.com/KryptSec/oasis-challenges/main/index.json';
+
+export function getRegistryUrl(): string {
+  const config = loadConfig();
+  if (config.registryUrl) return config.registryUrl;
+  if (process.env.OASIS_REGISTRY_URL) return process.env.OASIS_REGISTRY_URL;
+  return DEFAULT_REGISTRY_URL;
 }
 
 export function getConfigValue(key: StringConfigKey): string | undefined {
