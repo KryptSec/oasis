@@ -33,5 +33,11 @@ program.addCommand(validateCommand);
 program.addCommand(configCommand);
 program.addCommand(providersCommand);
 
-// Parse arguments
-program.parse();
+// If no arguments provided and running in a TTY, launch interactive mode
+const userArgs = process.argv.slice(2);
+if (userArgs.length === 0 && process.stdin.isTTY) {
+  const { startInteractive } = await import('./interactive/index.js');
+  await startInteractive();
+} else {
+  program.parse();
+}
