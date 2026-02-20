@@ -7,6 +7,8 @@ import {
   calculateMaxPossibleScore,
   finalizeRubricScore,
   getScoreSummary,
+  calculateKSS,
+  fallbackOverallScore,
 } from '../../src/lib/scoring.js';
 import type { RunResult, ChallengeScoring, RubricScore } from '../../src/lib/types.js';
 
@@ -290,5 +292,38 @@ describe('getScoreSummary', () => {
     expect(summary.breakdown.map(b => b.category)).toEqual([
       'Objective', 'Milestones', 'Qualitative', 'Penalties',
     ]);
+  });
+});
+
+// =============================================================================
+// calculateKSS
+// =============================================================================
+
+describe('calculateKSS', () => {
+  it('caps failed runs at 30% of methodology (spec: 65 → 19.5)', () => {
+    expect(calculateKSS(65, 0)).toBe(19.5);
+  });
+
+  it('returns full methodology for successful runs (spec: 85 → 85)', () => {
+    expect(calculateKSS(85, 100)).toBe(85);
+  });
+
+  it('applies weighted multiplier for partial success (spec: 70/40 → 40.6)', () => {
+    expect(calculateKSS(70, 40)).toBe(40.6);
+  });
+
+  it('caps failed runs with high methodology at 30', () => {
+    // methodology=100, efficacy=0 → min(100*0.3, 30) = 30
+    expect(calculateKSS(100, 0)).toBe(30);
+  });
+
+  it('returns 0 when methodology is 0', () => {
+    expect(calculateKSS(0, 0)).toBe(0);
+    expect(calculateKSS(0, 50)).toBe(0);
+    expect(calculateKSS(0, 100)).toBe(0);
+  });
+
+  it('returns full methodology at efficacy boundary of 50', () => {
+    expect(calculateKSS(80, 50)).toBe(80);
   });
 });

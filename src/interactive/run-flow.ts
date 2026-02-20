@@ -2,6 +2,7 @@ import { select, input, password, confirm } from '@inquirer/prompts';
 import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { colors, status, formatDifficulty, formatCategory, printScoreSummary } from '../lib/display.js';
+import { calculateKSS } from '../lib/scoring.js';
 import {
   getApiKey, setApiKey, getConfigValue,
   normalizeProvider, getEffectiveProviderUrl,
@@ -390,21 +391,14 @@ export async function runBenchmarkFlow(): Promise<void> {
 
           printAnalysisSummary(analysis);
 
-          if (analysis.rubricScore) {
-            printScoreSummary({
-              kss: analysis.rubricScore.total,
-              efficacy: result.success ? 100 : 0,
-              efficiency: analysis.rubricScore.percentage || 0,
-              time: result.totalTime,
-            });
-          } else {
-            printScoreSummary({
-              kss: analysis.strategy.overallScore,
-              efficacy: result.success ? 100 : 0,
-              efficiency: analysis.strategy.exploitEfficiency || 0,
-              time: result.totalTime,
-            });
-          }
+          const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
+          const efficacy = result.success ? 100 : 0;
+          printScoreSummary({
+            kss: calculateKSS(methodology, efficacy),
+            efficacy,
+            efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
+            time: result.totalTime,
+          });
 
           console.log(colors.gray(`  Analysis saved to: ${analysisPath}`));
         } catch (analysisError) {
