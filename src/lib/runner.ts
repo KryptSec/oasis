@@ -2,7 +2,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import chalk from 'chalk';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
@@ -18,25 +18,45 @@ const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
 // Command Execution
 // =============================================================================
 
+interface DockerExecInvocation {
+  command: string;
+  args: string[];
+  input: string;
+}
+
+export function buildDockerExecInvocation(command: string, containerName: string): DockerExecInvocation {
+  return {
+    command: 'docker',
+    args: ['exec', '-i', containerName, 'bash'],
+    input: command,
+  };
+}
+
 function executeCommand(command: string, containerName: string, verbose: boolean): string {
   if (verbose) {
     console.log(chalk.yellow(`\n> ${command}`));
   }
   try {
-    const execCommand = `docker exec ${containerName} bash -c "${command.replace(/"/g, '\\"')}"`;
-    const result = execSync(execCommand, {
-      encoding: 'utf-8',
+    const invocation = buildDockerExecInvocation(command, containerName);
+    const result = execFileSync(invocation.command, invocation.args, {
+      input: invocation.input,
+      encoding: 'utf8',
       timeout: 60000,
       maxBuffer: 10 * 1024 * 1024,
-      shell: '/bin/bash',
     });
     const output = result.trim();
     if (verbose) {
       console.log(chalk.gray(output.substring(0, 2000) + (output.length > 2000 ? '\n... (truncated)' : '')));
     }
     return output;
-  } catch (error: any) {
-    const errorOutput = error.stderr || error.message || 'Command failed';
+  } catch (error: unknown) {
+    const errorWithStderr = error as { stderr?: string | Buffer; message?: string };
+    const stderr = typeof errorWithStderr.stderr === 'string'
+      ? errorWithStderr.stderr
+      : Buffer.isBuffer(errorWithStderr.stderr)
+        ? errorWithStderr.stderr.toString('utf8')
+        : '';
+    const errorOutput = stderr || errorWithStderr.message || 'Command failed';
     if (verbose) {
       console.log(chalk.red(errorOutput));
     }
