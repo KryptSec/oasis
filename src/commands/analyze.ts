@@ -3,10 +3,11 @@ import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status } from '../lib/display.js';
-import { getApiKey, getConfigValue, getChallengesDir, getResultsDir } from '../lib/config.js';
+import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { saveAnalysisResult } from '../lib/runner.js';
 import { printAnalysisSummary } from '../lib/report.js';
+import { QuotaExceededError } from '../lib/retry.js';
 import type { RunResult, ChallengeConfig } from '../lib/types.js';
 
 export const analyzeCommand = new Command('analyze')
@@ -16,15 +17,17 @@ export const analyzeCommand = new Command('analyze')
   .option('--reanalyze', 'Re-analyze even if analysis already exists')
   .option('-c, --challenge <id>', 'Override challenge ID for loading config')
   .option('--model <model>', 'Analyzer model (default: claude-sonnet-4-5-20250929)')
-  .option('-k, --api-key <key>', 'Anthropic API key for analysis')
+  .option('-k, --api-key <key>', 'API key for analysis')
+  .option('-p, --provider <provider>', 'Provider for analysis (default: anthropic)')
+  .option('--api-url <url>', 'Custom API endpoint for analyzer')
   .action(async (runId, options) => {
-    const apiKey = options.apiKey || getApiKey('anthropic') || process.env.ANTHROPIC_API_KEY;
+    const analyzerProvider = normalizeProvider(options.provider || 'anthropic');
+    const apiKey = options.apiKey || getApiKey(analyzerProvider);
 
-    if (!apiKey) {
-      console.error(colors.red(`\n${status.error} Analysis requires an Anthropic API key.`));
+    if (!apiKey && analyzerProvider !== 'ollama') {
+      console.error(colors.red(`\n${status.error} Analysis requires an API key for ${analyzerProvider}.`));
       console.log(colors.gray(`  Configure via:`));
-      console.log(colors.gray(`    oasis config set api-key anthropic <your-key>`));
-      console.log(colors.gray(`  Or set: ANTHROPIC_API_KEY=<your-key>`));
+      console.log(colors.gray(`    oasis config set api-key ${analyzerProvider} <your-key>`));
       process.exit(1);
     }
 
@@ -108,6 +111,8 @@ export const analyzeCommand = new Command('analyze')
         const analysis = await analyzeRun(result, {
           apiKey,
           analyzerModel: options.model,
+          provider: analyzerProvider,
+          baseUrl: options.apiUrl || getEffectiveProviderUrl(analyzerProvider) || undefined,
           challengeTarget: challengeConfig?.target || `Challenge: ${challengeId}`,
           challengeConfig,
         });
@@ -123,8 +128,18 @@ export const analyzeCommand = new Command('analyze')
           console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
         }
       } catch (error) {
-        spinner.fail(`Analysis failed for ${id}`);
-        console.error(colors.red(`  ${error instanceof Error ? error.message : 'Unknown error'}`));
+        if (error instanceof QuotaExceededError) {
+          spinner.fail(`Analysis failed for ${id} — API quota or rate limit reached`);
+          console.log();
+          console.log(colors.gray(`  Your benchmark results are safe. Retry anytime.`));
+          console.log();
+          console.log(colors.gray(`  Next steps:`));
+          console.log(colors.gray(`    - Retry with another provider:  oasis analyze ${id} -p <provider>`));
+          console.log(colors.gray(`    - Retry later:                  oasis analyze ${id}`));
+        } else {
+          spinner.fail(`Analysis failed for ${id}`);
+          console.error(colors.red(`  ${error instanceof Error ? error.message : 'Unknown error'}`));
+        }
       }
     }
 

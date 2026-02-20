@@ -1,8 +1,9 @@
 // OASIS Attack Chain Analyzer
-// Uses LLM (Claude) to provide deep analysis of benchmark runs
-// Open-source: works with user's own Anthropic API key
+// Uses LLM to provide deep analysis of benchmark runs
+// Supports Anthropic (native SDK) and OpenAI-compatible providers
 
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import type {
   RunResult,
   AnalysisResult,
@@ -18,6 +19,7 @@ import {
   finalizeRubricScore,
 } from './scoring.js';
 import { withRateLimitRetry } from './retry.js';
+import { isAnthropicProvider, resolveProvider } from './providers.js';
 
 // =============================================================================
 // Configuration
@@ -401,46 +403,105 @@ function buildRubricScore(
 export interface AnalyzeOptions {
   apiKey?: string;
   analyzerModel?: string;
+  provider?: string;       // 'anthropic', 'openai', 'xai', 'google', 'ollama', 'custom'
+  baseUrl?: string;        // Custom endpoint URL for OpenAI-compatible providers
   challengeTarget?: string;
   challengeConfig?: ChallengeConfig;
 }
 
-export async function analyzeRun(
-  result: RunResult,
-  options: AnalyzeOptions = {}
-): Promise<AnalysisResult> {
-  const apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY || process.env.ANALYZER_API_KEY;
+function resolveDefaultAnalyzerModel(provider: string): string {
+  if (isAnthropicProvider(provider)) return DEFAULT_ANALYZER_MODEL;
+  const preset = resolveProvider(provider);
+  return preset?.models[0] || DEFAULT_ANALYZER_MODEL;
+}
 
-  if (!apiKey) {
-    throw new Error(
-      'No Anthropic API key provided for analysis.\n' +
-      'Set ANTHROPIC_API_KEY environment variable or configure via:\n' +
-      '  oasis config set api-key anthropic <your-key>'
-    );
-  }
-
-  const analyzerModel = options.analyzerModel || DEFAULT_ANALYZER_MODEL;
+async function callAnthropicAnalyzer(
+  apiKey: string, model: string, prompt: string
+): Promise<string> {
   const client = new Anthropic({ apiKey });
-
-  const challengeTarget = options.challengeTarget || `Challenge: ${result.challenge}`;
-  const prompt = buildAnalysisPrompt(result, challengeTarget, options.challengeConfig);
-
   const response = await withRateLimitRetry(
     () => client.messages.create({
-      model: analyzerModel,
+      model,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     }),
     'Analysis',
   );
-
   const textContent = response.content.find(c => c.type === 'text');
   if (!textContent || textContent.type !== 'text') {
     throw new Error('No text response from analyzer');
   }
+  return textContent.text;
+}
 
-  return parseAnalysisResponse(textContent.text, result.id, result, options.challengeConfig);
+async function callOpenAIAnalyzer(
+  apiKey: string | undefined, baseURL: string | undefined,
+  model: string, prompt: string
+): Promise<string> {
+  const client = new OpenAI({ apiKey, baseURL });
+  const response = await withRateLimitRetry(
+    () => client.chat.completions.create({
+      model,
+      max_completion_tokens: 4096,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+      ],
+    }),
+    'Analysis',
+  );
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('No text response from analyzer');
+  }
+  return content;
+}
+
+export async function analyzeRun(
+  result: RunResult,
+  options: AnalyzeOptions = {}
+): Promise<AnalysisResult> {
+  const provider = options.provider || 'anthropic';
+  const useAnthropic = isAnthropicProvider(provider);
+
+  // Resolve API key — try option, then provider-specific env, then fallback
+  const apiKey = options.apiKey
+    || (useAnthropic
+      ? (process.env.ANTHROPIC_API_KEY || process.env.ANALYZER_API_KEY)
+      : undefined);
+
+  // For non-Anthropic providers that need a key
+  if (!apiKey && provider !== 'ollama') {
+    const providerPreset = resolveProvider(provider);
+    const envHint = providerPreset?.envKey || `${provider.toUpperCase()}_API_KEY`;
+    throw new Error(
+      `No API key provided for ${provider} analysis.\n` +
+      `Set ${envHint} environment variable or configure via:\n` +
+      `  oasis config set api-key ${provider} <your-key>`
+    );
+  }
+
+  // Resolve model — default per provider
+  const analyzerModel = options.analyzerModel || resolveDefaultAnalyzerModel(provider);
+
+  // Resolve base URL for OpenAI-compatible providers
+  const baseUrl = options.baseUrl || (!useAnthropic
+    ? (resolveProvider(provider)?.baseUrl || undefined)
+    : undefined);
+
+  const challengeTarget = options.challengeTarget || `Challenge: ${result.challenge}`;
+  const prompt = buildAnalysisPrompt(result, challengeTarget, options.challengeConfig);
+
+  let responseText: string;
+
+  if (useAnthropic) {
+    responseText = await callAnthropicAnalyzer(apiKey!, analyzerModel, prompt);
+  } else {
+    responseText = await callOpenAIAnalyzer(apiKey, baseUrl, analyzerModel, prompt);
+  }
+
+  return parseAnalysisResponse(responseText, result.id, result, options.challengeConfig);
 }
 
 export async function analyzeExistingRun(

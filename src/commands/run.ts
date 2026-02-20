@@ -7,8 +7,8 @@ import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, 
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
-import { isAnthropicProvider } from '../lib/providers.js';
 import { runPreflightChecks, checkApiKey } from '../lib/env-check.js';
+import { QuotaExceededError } from '../lib/retry.js';
 import type { ChallengeConfig, RunnerConfig } from '../lib/types.js';
 
 export const runCommand = new Command('run')
@@ -22,6 +22,8 @@ export const runCommand = new Command('run')
   .option('--no-analyze', 'Skip post-run analysis')
   .option('--analyzer-model <model>', 'Model for analysis (default: claude-sonnet-4-5-20250929)')
   .option('--analyzer-key <key>', 'Separate API key for analysis (defaults to anthropic key)')
+  .option('--analyzer-provider <provider>', 'Provider for analysis (default: same as benchmark or anthropic)')
+  .option('--analyzer-url <url>', 'Custom API endpoint for analyzer')
   .option('--max-iterations <n>', 'Override max iterations', parseInt)
   .option('--report', 'Print detailed report after run', false)
   .option('--verbose', 'Show detailed output', false)
@@ -128,6 +130,17 @@ export const runCommand = new Command('run')
       process.exit(1);
     }
 
+    // Resolve analyzer config early (needed for pre-run quota probe)
+    const analyzerProvider = analyze
+      ? normalizeProvider(options.analyzerProvider || provider)
+      : '';
+    const analyzerApiKey = analyze
+      ? (options.analyzerKey || getApiKey(analyzerProvider) || resolvedApiKey)
+      : undefined;
+    const analyzerBaseUrl = analyze
+      ? (options.analyzerUrl || getEffectiveProviderUrl(analyzerProvider) || undefined)
+      : undefined;
+
     // Display run info
     console.log();
     console.log(colors.gray(`Challenge: ${challengeConfig.name || challenge}`));
@@ -196,19 +209,12 @@ export const runCommand = new Command('run')
 
       // Run analysis
       if (analyze) {
-        const analyzerApiKey = options.analyzerKey || getApiKey('anthropic') || resolvedApiKey;
-
-        if (!analyzerApiKey || !isAnthropicProvider('anthropic')) {
-          // Need an Anthropic key for analysis
-          const hasAnthropicKey = getApiKey('anthropic') || process.env.ANTHROPIC_API_KEY;
-          if (!hasAnthropicKey && !isAnthropicProvider(provider)) {
-            console.log();
-            console.log(colors.yellow(`${status.warning} Analysis requires an Anthropic API key.`));
-            console.log(colors.gray(`  Configure via: oasis config set api-key anthropic <your-key>`));
-            console.log(colors.gray(`  Or set: ANTHROPIC_API_KEY=<your-key>`));
-            console.log(colors.gray(`  To skip analysis: oasis run --no-analyze ...`));
-            return;
-          }
+        if (!analyzerApiKey && analyzerProvider !== 'ollama') {
+          console.log();
+          console.log(colors.yellow(`${status.warning} Analysis requires an API key for ${analyzerProvider}.`));
+          console.log(colors.gray(`  Configure via: oasis config set api-key ${analyzerProvider} <your-key>`));
+          console.log(colors.gray(`  To skip analysis: oasis run --no-analyze ...`));
+          return;
         }
 
         const spinnerAnalysis = ora({
@@ -218,8 +224,10 @@ export const runCommand = new Command('run')
 
         try {
           const analysis = await analyzeRun(result, {
-            apiKey: options.analyzerKey || getApiKey('anthropic') || process.env.ANTHROPIC_API_KEY || resolvedApiKey,
+            apiKey: analyzerApiKey,
             analyzerModel: options.analyzerModel,
+            provider: analyzerProvider,
+            baseUrl: analyzerBaseUrl,
             challengeTarget: challengeConfig.target,
             challengeConfig,
           });
@@ -249,9 +257,20 @@ export const runCommand = new Command('run')
 
           console.log(colors.gray(`Analysis saved to: ${analysisPath}`));
         } catch (analysisError) {
-          spinnerAnalysis.fail('Analysis failed');
-          console.error(colors.red(`  ${analysisError instanceof Error ? analysisError.message : 'Unknown error'}`));
-          console.log(colors.gray(`  Retry later with: oasis analyze ${result.id}`));
+          if (analysisError instanceof QuotaExceededError) {
+            spinnerAnalysis.fail('Analysis failed — API quota or rate limit reached');
+            console.log();
+            console.log(colors.gray(`  Your benchmark results are saved (run ${result.id}).`));
+            console.log(colors.gray(`  Retry analysis anytime without re-running the benchmark.`));
+            console.log();
+            console.log(colors.gray(`  Next steps:`));
+            console.log(colors.gray(`    - Retry with another provider:  oasis analyze ${result.id} -p <provider>`));
+            console.log(colors.gray(`    - Retry later:                  oasis analyze ${result.id}`));
+          } else {
+            spinnerAnalysis.fail('Analysis failed');
+            console.error(colors.red(`  ${analysisError instanceof Error ? analysisError.message : 'Unknown error'}`));
+            console.log(colors.gray(`  Retry later with: oasis analyze ${result.id}`));
+          }
         }
       } else {
         // No analysis, just print basic stats

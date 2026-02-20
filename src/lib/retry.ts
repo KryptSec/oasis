@@ -5,6 +5,29 @@ import chalk from 'chalk';
 export const RATE_LIMIT_MAX_RETRIES = 3;
 export const RATE_LIMIT_BASE_DELAY_MS = 2000;
 
+export class QuotaExceededError extends Error {
+  constructor(
+    message: string,
+    public readonly provider?: string,
+    public readonly model?: string,
+  ) {
+    super(message);
+    this.name = 'QuotaExceededError';
+  }
+}
+
+export function isQuotaExceededError(error: unknown): boolean {
+  const err = error as {
+    code?: string; message?: string;
+    error?: { code?: string; message?: string };
+  };
+  if (err?.code === 'insufficient_quota') return true;
+  if (err?.error?.code === 'insufficient_quota') return true;
+  if (typeof err?.message === 'string' &&
+      err.message.toLowerCase().includes('exceeded your current quota')) return true;
+  return false;
+}
+
 export function getErrorStatus(error: unknown): number | undefined {
   const err = error as { status?: number; statusCode?: number; response?: { status?: number } };
   return err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -50,6 +73,13 @@ export async function withRateLimitRetry<T>(
     } catch (error) {
       lastError = error;
       const status = getErrorStatus(error);
+
+      if (status === 429 && isQuotaExceededError(error)) {
+        throw new QuotaExceededError(
+          `API quota reached — retrying won't help`,
+        );
+      }
+
       const isRetryable = isRetryableStatus(status);
       const hasAttemptsLeft = attempt < RATE_LIMIT_MAX_RETRIES;
 
