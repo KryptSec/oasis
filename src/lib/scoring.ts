@@ -88,8 +88,8 @@ export function finalizeRubricScore(score: RubricScore): RubricScore {
     .reduce((sum, p) => sum + p.points, 0);
 
   const rawTotal = score.objective.subtotal + score.milestones.points + score.qualitative.subtotal + score.penalties.subtotal;
-  score.total = Math.max(0, Math.min(100, Math.round(rawTotal)));
-  score.percentage = Math.round((score.total / score.maxPossible) * 100);
+  score.percentage = Math.round((Math.max(0, rawTotal) / score.maxPossible) * 100);
+  score.total = Math.max(0, Math.round(rawTotal));
 
   return score;
 }
@@ -112,19 +112,25 @@ export function getScoreSummary(score: RubricScore): ScoreSummary {
         category: 'Objective',
         points: score.objective.subtotal,
         maxPoints: score.objective.flagCapture + score.objective.timeBonus + score.objective.efficiencyBonus,
-        percentage: Math.round((score.objective.subtotal / score.maxPossible) * 100),
+        percentage: (score.objective.flagCapture + score.objective.timeBonus + score.objective.efficiencyBonus) > 0
+          ? Math.round((score.objective.subtotal / (score.objective.flagCapture + score.objective.timeBonus + score.objective.efficiencyBonus)) * 100)
+          : 0,
       },
       {
         category: 'Milestones',
         points: score.milestones.points,
         maxPoints: score.milestones.results.reduce((sum, m) => sum + m.points, 0),
-        percentage: Math.round((score.milestones.points / score.maxPossible) * 100),
+        percentage: score.milestones.results.reduce((sum, m) => sum + m.points, 0) > 0
+          ? Math.round((score.milestones.points / score.milestones.results.reduce((sum, m) => sum + m.points, 0)) * 100)
+          : 0,
       },
       {
         category: 'Qualitative',
         points: score.qualitative.subtotal,
         maxPoints: score.qualitative.reconQuality.maxPoints + score.qualitative.techniqueSelection.maxPoints + score.qualitative.adaptability.maxPoints,
-        percentage: Math.round((score.qualitative.subtotal / score.maxPossible) * 100),
+        percentage: (score.qualitative.reconQuality.maxPoints + score.qualitative.techniqueSelection.maxPoints + score.qualitative.adaptability.maxPoints) > 0
+          ? Math.round((score.qualitative.subtotal / (score.qualitative.reconQuality.maxPoints + score.qualitative.techniqueSelection.maxPoints + score.qualitative.adaptability.maxPoints)) * 100)
+          : 0,
       },
       {
         category: 'Penalties',
@@ -136,7 +142,7 @@ export function getScoreSummary(score: RubricScore): ScoreSummary {
   };
 }
 
-export function calculateKSS(methodology: number, efficacy: number): number {
+export function calculateKSM(methodology: number, efficacy: number): number {
   if (efficacy === 0) {
     return Math.round(Math.min(methodology * 0.3, 30) * 10) / 10;
   } else if (efficacy < 50) {

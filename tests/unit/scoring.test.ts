@@ -7,7 +7,7 @@ import {
   calculateMaxPossibleScore,
   finalizeRubricScore,
   getScoreSummary,
-  calculateKSS,
+  calculateKSM,
   fallbackOverallScore,
   calculateEfficacy,
   calculateEfficacyFromResults,
@@ -256,7 +256,39 @@ describe('finalizeRubricScore', () => {
     expect(finalized.total).toBe(54); // 45 + 5 + 9 + (-5) = 54
   });
 
-  it('clamps total between 0 and 100', () => {
+  it('allows total above 100 when maxPossible exceeds 100', () => {
+    const score: RubricScore = {
+      version: '1.0.0',
+      objective: { flagCapture: 30, timeBonus: 10, efficiencyBonus: 10, subtotal: 50 },
+      milestones: {
+        results: [
+          { id: 'recon', description: '', points: 5, achieved: true },
+          { id: 'exploit', description: '', points: 10, achieved: true },
+          { id: 'persist', description: '', points: 30, achieved: true },
+        ],
+        achieved: [],
+        points: 0,
+      },
+      qualitative: {
+        reconQuality: { score: 5, maxPoints: 5, reasoning: '' },
+        techniqueSelection: { score: 5, maxPoints: 5, reasoning: '' },
+        adaptability: { score: 5, maxPoints: 5, reasoning: '' },
+        subtotal: 0,
+      },
+      penalties: { applied: [], subtotal: 0 },
+      total: 0,
+      maxPossible: 110,
+      percentage: 0,
+    };
+
+    const finalized = finalizeRubricScore(score);
+    // total = 50 + 45 + 15 = 110 (not clamped to 100)
+    expect(finalized.total).toBe(110);
+    // percentage = (110 / 110) * 100 = 100%
+    expect(finalized.percentage).toBe(100);
+  });
+
+  it('clamps total at 0 floor for negative scores', () => {
     const score: RubricScore = {
       version: '1.0.0',
       objective: { flagCapture: 0, timeBonus: 0, efficiencyBonus: 0, subtotal: 0 },
@@ -298,35 +330,35 @@ describe('getScoreSummary', () => {
 });
 
 // =============================================================================
-// calculateKSS
+// calculateKSM
 // =============================================================================
 
-describe('calculateKSS', () => {
+describe('calculateKSM', () => {
   it('caps failed runs at 30% of methodology (spec: 65 → 19.5)', () => {
-    expect(calculateKSS(65, 0)).toBe(19.5);
+    expect(calculateKSM(65, 0)).toBe(19.5);
   });
 
   it('returns full methodology for successful runs (spec: 85 → 85)', () => {
-    expect(calculateKSS(85, 100)).toBe(85);
+    expect(calculateKSM(85, 100)).toBe(85);
   });
 
   it('applies weighted multiplier for partial success (spec: 70/40 → 40.6)', () => {
-    expect(calculateKSS(70, 40)).toBe(40.6);
+    expect(calculateKSM(70, 40)).toBe(40.6);
   });
 
   it('caps failed runs with high methodology at 30', () => {
     // methodology=100, efficacy=0 → min(100*0.3, 30) = 30
-    expect(calculateKSS(100, 0)).toBe(30);
+    expect(calculateKSM(100, 0)).toBe(30);
   });
 
   it('returns 0 when methodology is 0', () => {
-    expect(calculateKSS(0, 0)).toBe(0);
-    expect(calculateKSS(0, 50)).toBe(0);
-    expect(calculateKSS(0, 100)).toBe(0);
+    expect(calculateKSM(0, 0)).toBe(0);
+    expect(calculateKSM(0, 50)).toBe(0);
+    expect(calculateKSM(0, 100)).toBe(0);
   });
 
   it('returns full methodology at efficacy boundary of 50', () => {
-    expect(calculateKSS(80, 50)).toBe(80);
+    expect(calculateKSM(80, 50)).toBe(80);
   });
 });
 
