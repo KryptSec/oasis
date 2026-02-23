@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createRequire } from 'module';
 import { Command } from 'commander';
 import { runCommand } from './commands/run.js';
 import { analyzeCommand } from './commands/analyze.js';
@@ -13,12 +14,15 @@ import { configCommand } from './commands/config.js';
 import { providersCommand } from './commands/providers.js';
 import { loginCommand } from './commands/login.js';
 
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
+
 const program = new Command();
 
 program
   .name('oasis')
   .description('OASIS - AI Security Benchmarking CLI')
-  .version('0.1.0');
+  .version(version);
 
 // Register commands
 program.addCommand(loginCommand);

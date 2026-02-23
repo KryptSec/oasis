@@ -4,6 +4,14 @@ All notable changes to OASIS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.2] - 2026-02-23
+
+### Fixed
+
+- CLI `--version` now reads from package.json instead of hardcoded value
+- Docker auto-start on macOS when daemon isn't running
+- Per-image ARM64 fallback (only emulates containers that need it)
+
 ## [0.1.1] - 2026-02-23
 
 ### Fixed
