@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { getChallengesDir, getResultsDir } from '../lib/config.js';
-import { calculateKSS } from '../lib/scoring.js';
+import { calculateKSS, calculateEfficacyFromResults } from '../lib/scoring.js';
 import { fetchRegistryIndex, fetchChallengeConfig } from '../lib/registry.js';
 import type { RegistryEntry } from '../lib/registry.js';
 import type { ChallengeConfig, RunResult, AnalysisResult } from '../lib/types.js';
@@ -105,26 +105,39 @@ export function loadRecentResults(limit = 20): LoadedResult[] {
     })
     .sort((a, b) => b.time - a.time);
 
-  const results: LoadedResult[] = [];
-
+  // First pass: load all results and analyses (need all for efficacy calculation)
+  const allEntries: { id: string; result: RunResult; analysis: AnalysisResult | null }[] = [];
   for (const file of files) {
-    if (results.length >= limit) break;
     try {
       const result: RunResult = JSON.parse(readFileSync(file.path, 'utf-8'));
       const analysisPath = resolve(dir, `${file.id}.analysis.json`);
       let analysis: AnalysisResult | null = null;
-      let score = 0;
 
       if (existsSync(analysisPath)) {
         try {
           analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-          const methodology = analysis!.rubricScore?.total ?? analysis!.strategy?.overallScore ?? 0;
-          score = calculateKSS(methodology, result.success ? 100 : 0);
         } catch { /* skip */ }
       }
 
-      results.push({ id: file.id, result, analysis, score });
+      allEntries.push({ id: file.id, result, analysis });
     } catch { /* skip malformed */ }
+  }
+
+  // Second pass: compute scores with proper multi-run efficacy, then limit
+  const allResults = allEntries.map(e => e.result);
+  const results: LoadedResult[] = [];
+
+  for (const { id, result, analysis } of allEntries) {
+    if (results.length >= limit) break;
+    let score = 0;
+
+    if (analysis) {
+      const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+      const efficacy = calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults);
+      score = calculateKSS(methodology, efficacy);
+    }
+
+    results.push({ id, result, analysis, score });
   }
 
   return results;
