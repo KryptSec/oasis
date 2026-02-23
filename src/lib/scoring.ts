@@ -190,7 +190,7 @@ export function calculateEfficacy(
   }
 
   if (total === 0) return 0;
-  return (successes / total) * 100;
+  return Math.round((successes / total) * 1000) / 10;
 }
 
 /**
@@ -207,5 +207,5 @@ export function calculateEfficacyFromResults(
   );
   if (matching.length === 0) return 0;
   const successes = matching.filter(r => r.success).length;
-  return (successes / matching.length) * 100;
+  return Math.round((successes / matching.length) * 1000) / 10;
 }

@@ -4,8 +4,8 @@ import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status } from '../lib/display.js';
 
-import { calculateKSS, calculateEfficacy } from '../lib/scoring.js';
-import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
+import { calculateKSS, calculateEfficacyFromResults } from '../lib/scoring.js';
+import { getApiKey, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 
 import { analyzeRun } from '../lib/analyzer.js';
@@ -93,6 +93,16 @@ export const analyzeCommand = new Command('analyze')
 
     const challengesDir = getChallengesDir();
 
+    // Pre-load all results for multi-run efficacy calculation (avoids O(N*M) disk reads)
+    const allResults: RunResult[] = [];
+    if (existsSync(getResultsDir())) {
+      for (const f of readdirSync(getResultsDir()).filter(f => f.endsWith('.json') && !f.includes('.analysis.'))) {
+        try {
+          allResults.push(JSON.parse(readFileSync(pathResolve(getResultsDir(), f), 'utf-8')));
+        } catch {}
+      }
+    }
+
     for (const id of runIds) {
       let resultPath: string;
       try {
@@ -150,7 +160,7 @@ export const analyzeCommand = new Command('analyze')
           printAnalysisSummary(analysis);
         } else {
           const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
-          const score = calculateKSS(methodology, calculateEfficacy(result.challenge, result.modelVersion, getResultsDir()));
+          const score = calculateKSS(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults));
           console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
         }
       } catch (error) {

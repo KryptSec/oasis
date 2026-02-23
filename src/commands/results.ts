@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status, formatScore, formatTime, formatDifficulty } from '../lib/display.js';
-import { calculateKSS, calculateEfficacy, calculateEfficacyFromResults } from '../lib/scoring.js';
+import { calculateKSS, calculateEfficacyFromResults } from '../lib/scoring.js';
 import { getResultsDir, getChallengesDir } from '../lib/config.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 import type { RunResult, AnalysisResult, ChallengeConfig } from '../lib/types.js';
@@ -42,44 +42,57 @@ resultsCommand
     console.log(colors.gray(`${'ID'.padEnd(12)} ${'Challenge'.padEnd(15)} ${'Model'.padEnd(30)} ${'Result'.padEnd(10)} ${'Time'.padEnd(8)} Score`));
     console.log(colors.gray('─'.repeat(90)));
 
-    let count = 0;
     const limit = parseInt(options.limit) || 20;
 
+    // First pass: load all results (needed for multi-run efficacy)
+    const loaded: { id: string; result: RunResult; analysis: AnalysisResult | null }[] = [];
     for (const file of files) {
-      if (count >= limit) break;
-
       try {
         const result: RunResult = JSON.parse(readFileSync(file.path, 'utf-8'));
-
         if (options.challenge && result.challenge !== options.challenge) continue;
 
-        // Check for analysis
         const analysisPath = pathResolve(getResultsDir(), `${file.id}.analysis.json`);
-        let score = '-';
+        let analysis: AnalysisResult | null = null;
         if (existsSync(analysisPath)) {
           try {
-            const analysis: AnalysisResult = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-            const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
-            const s = calculateKSS(methodology, calculateEfficacy(result.challenge, result.modelVersion, getResultsDir()));
-            score = s.toString();
+            analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
           } catch {}
         }
 
-        const resultStr = result.success ? colors.green('SUCCESS') : colors.red('FAILED');
-        const timeStr = `${result.totalTime.toFixed(1)}s`;
-
-        console.log(
-          `${colors.cyan(file.id.padEnd(12))} ` +
-          `${colors.white(result.challenge.padEnd(15))} ` +
-          `${colors.gray((result.modelVersion || '').padEnd(30))} ` +
-          `${resultStr.padEnd(10)} ` +
-          `${colors.yellow(timeStr.padEnd(8))} ` +
-          `${score !== '-' ? formatScore(parseFloat(score)) : colors.gray('-')}`
-        );
-        count++;
+        loaded.push({ id: file.id, result, analysis });
       } catch {
         // Skip malformed result files
       }
+    }
+
+    // Second pass: compute scores with proper multi-run efficacy
+    const allResults = loaded.map(e => e.result);
+    let count = 0;
+
+    for (const { id, result, analysis } of loaded) {
+      if (count >= limit) break;
+
+      let score = '-';
+      if (analysis) {
+        try {
+          const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+          const s = calculateKSS(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults));
+          score = s.toString();
+        } catch {}
+      }
+
+      const resultStr = result.success ? colors.green('SUCCESS') : colors.red('FAILED');
+      const timeStr = `${result.totalTime.toFixed(1)}s`;
+
+      console.log(
+        `${colors.cyan(id.padEnd(12))} ` +
+        `${colors.white(result.challenge.padEnd(15))} ` +
+        `${colors.gray((result.modelVersion || '').padEnd(30))} ` +
+        `${resultStr.padEnd(10)} ` +
+        `${colors.yellow(timeStr.padEnd(8))} ` +
+        `${score !== '-' ? formatScore(parseFloat(score)) : colors.gray('-')}`
+      );
+      count++;
     }
 
     console.log(colors.gray(`\nShowing ${count} of ${files.length} results.`));
@@ -216,8 +229,18 @@ resultsCommand
     ];
 
     if (a1 || a2) {
-      const s1 = calculateKSS(a1?.rubricScore?.total ?? a1?.strategy?.overallScore ?? 0, calculateEfficacy(r1.challenge, r1.modelVersion, getResultsDir()));
-      const s2 = calculateKSS(a2?.rubricScore?.total ?? a2?.strategy?.overallScore ?? 0, calculateEfficacy(r2.challenge, r2.modelVersion, getResultsDir()));
+      // Load all results once for multi-run efficacy calculation
+      const allResults: RunResult[] = [];
+      if (existsSync(getResultsDir())) {
+        for (const f of readdirSync(getResultsDir()).filter(f => f.endsWith('.json') && !f.includes('.analysis.'))) {
+          try {
+            allResults.push(JSON.parse(readFileSync(pathResolve(getResultsDir(), f), 'utf-8')));
+          } catch {}
+        }
+      }
+
+      const s1 = calculateKSS(a1?.rubricScore?.total ?? a1?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r1.challenge, r1.modelVersion, allResults));
+      const s2 = calculateKSS(a2?.rubricScore?.total ?? a2?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r2.challenge, r2.modelVersion, allResults));
       rows.push(['Score', s1 ? s1.toString() : 'N/A', s2 ? s2.toString() : 'N/A']);
       rows.push(['Approach', a1?.behavior?.approach || 'N/A', a2?.behavior?.approach || 'N/A']);
     }
