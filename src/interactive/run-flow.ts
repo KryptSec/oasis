@@ -11,10 +11,10 @@ import {
 import { PROVIDERS } from '../lib/providers.js';
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
-import { checkDockerRunning, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
+import { ensureDocker, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
 import { QuotaExceededError } from '../lib/retry.js';
-import { pullImage, startContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
+import { pullAndStartContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
 import { buildContainerSpec } from '../lib/registry.js';
 import { loadLocalChallenges, loadRegistryChallenges } from './helpers.js';
 import type { ContainerSpec } from '../lib/docker.js';
@@ -237,13 +237,14 @@ export async function runBenchmarkFlow(): Promise<void> {
     }
   }
 
-  // Check Docker is running
-  const dockerCheck = checkDockerRunning();
+  // Ensure Docker is running (auto-start on macOS)
+  spinnerPreflight.text = 'Checking Docker...';
+  const dockerCheck = await ensureDocker(
+    (msg) => { spinnerPreflight.text = msg; },
+  );
+
   if (!dockerCheck.ok) {
-    spinnerPreflight.fail('Docker is not running');
-    for (const err of dockerCheck.errors) {
-      console.log(colors.red(`  ${err}`));
-    }
+    spinnerPreflight.fail(dockerCheck.errors[0]);
     for (const hint of dockerCheck.hints) {
       console.log(colors.gray(`  ${hint}`));
     }
@@ -251,7 +252,11 @@ export async function runBenchmarkFlow(): Promise<void> {
     return;
   }
 
-  spinnerPreflight.succeed('Pre-flight checks passed');
+  if (dockerCheck.autoStarted) {
+    spinnerPreflight.succeed('Docker Desktop started — pre-flight checks passed');
+  } else {
+    spinnerPreflight.succeed('Pre-flight checks passed');
+  }
 
   // 8. Start containers
   const containerName = challengeConfig.containerName || `${challengeConfig.id}-kali-1`;
@@ -268,12 +273,7 @@ export async function runBenchmarkFlow(): Promise<void> {
     if (isLocalMode) {
       startFromCompose(challengeDir!);
     } else {
-      spinnerContainers.text = `Pulling ${containerSpec!.targetImage}...`;
-      pullImage(containerSpec!.targetImage);
-      spinnerContainers.text = `Pulling ${containerSpec!.kaliImage}...`;
-      pullImage(containerSpec!.kaliImage);
-      spinnerContainers.text = 'Starting containers...';
-      startContainers(containerSpec!);
+      pullAndStartContainers(containerSpec!, (msg) => { spinnerContainers.text = msg; });
     }
 
     spinnerContainers.text = 'Waiting for target to be ready...';

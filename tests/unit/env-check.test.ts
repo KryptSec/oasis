@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execSync } from 'child_process';
 import {
   checkDockerRunning,
+  ensureDocker,
   checkContainersRunning,
   checkTargetReachable,
   checkKaliTools,
@@ -67,6 +68,113 @@ describe('checkDockerRunning', () => {
     const result = checkDockerRunning();
     expect(result.hints.length).toBeGreaterThan(0);
     expect(result.hints.some((h) => h.includes('Docker Desktop'))).toBe(true);
+  });
+});
+
+// =============================================================================
+// ensureDocker
+// =============================================================================
+
+describe('ensureDocker', () => {
+  const originalPlatform = process.platform;
+
+  function setPlatform(value: string) {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  }
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('returns immediately when Docker is already running', async () => {
+    mockExecSync.mockReturnValueOnce('' as any); // docker ps succeeds
+    const result = await ensureDocker();
+    expect(result.ok).toBe(true);
+    expect(result.autoStarted).toBe(false);
+    expect(mockExecSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns error on non-macOS when Docker is not running', async () => {
+    setPlatform('linux');
+    mockExecSync.mockImplementation(() => { throw new Error('not running'); });
+    const result = await ensureDocker();
+    expect(result.ok).toBe(false);
+    expect(result.autoStarted).toBe(false);
+    expect(result.errors).toContain('Docker is not running or not accessible');
+    expect(result.hints.some((h) => h.includes('Start Docker Desktop'))).toBe(true);
+    // Should only have called docker ps once (no open command)
+    expect(mockExecSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('auto-starts Docker Desktop on macOS and polls until ready', async () => {
+    setPlatform('darwin');
+    let callCount = 0;
+    mockExecSync.mockImplementation((cmd: unknown) => {
+      callCount++;
+      const cmdStr = cmd as string;
+      if (cmdStr === 'open --background -a Docker') return '' as any;
+      // First docker ps fails, second succeeds (after polling)
+      if (cmdStr === 'docker ps') {
+        if (callCount <= 2) throw new Error('not running');
+        return '' as any;
+      }
+      throw new Error('unexpected command');
+    });
+
+    const result = await ensureDocker(undefined, 60_000);
+    expect(result.ok).toBe(true);
+    expect(result.autoStarted).toBe(true);
+  });
+
+  it('returns error when open command fails on macOS', async () => {
+    setPlatform('darwin');
+    mockExecSync.mockImplementation((cmd: unknown) => {
+      const cmdStr = cmd as string;
+      if (cmdStr === 'docker ps') throw new Error('not running');
+      if (cmdStr === 'open --background -a Docker') throw new Error('app not found');
+      throw new Error('unexpected');
+    });
+
+    const result = await ensureDocker();
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain('Failed to start Docker Desktop');
+    expect(result.hints.some((h) => h.includes('Install Docker Desktop'))).toBe(true);
+  });
+
+  it('returns timeout error when Docker never becomes ready', async () => {
+    setPlatform('darwin');
+    mockExecSync.mockImplementation((cmd: unknown) => {
+      const cmdStr = cmd as string;
+      if (cmdStr === 'open --background -a Docker') return '' as any;
+      throw new Error('not running');
+    });
+
+    const result = await ensureDocker(undefined, 100); // very short timeout
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain('Docker Desktop failed to start within timeout');
+  });
+
+  it('calls onStatus callback with progress messages', async () => {
+    setPlatform('darwin');
+    let callCount = 0;
+    mockExecSync.mockImplementation((cmd: unknown) => {
+      callCount++;
+      const cmdStr = cmd as string;
+      if (cmdStr === 'open --background -a Docker') return '' as any;
+      if (cmdStr === 'docker ps') {
+        // Fail first check, succeed after first poll
+        if (callCount <= 2) throw new Error('not running');
+        return '' as any;
+      }
+      throw new Error('unexpected');
+    });
+
+    const messages: string[] = [];
+    const onStatus = (msg: string) => { messages.push(msg); };
+
+    await ensureDocker(onStatus, 60_000);
+    expect(messages.some((m) => m.includes('Starting Docker Desktop'))).toBe(true);
+    expect(messages.some((m) => m.includes('Waiting for Docker to be ready'))).toBe(true);
   });
 });
 
