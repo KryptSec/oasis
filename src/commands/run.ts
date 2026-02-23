@@ -10,7 +10,7 @@ import { analyzeRun } from '../lib/analyzer.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
 import { ensureDocker, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
 import { QuotaExceededError } from '../lib/retry.js';
-import { pullImage, startContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
+import { pullAndStartContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
 import { fetchRegistryIndex, fetchChallengeConfig, buildContainerSpec } from '../lib/registry.js';
 import type { ContainerSpec } from '../lib/docker.js';
 import type { ChallengeConfig, RunnerConfig } from '../lib/types.js';
@@ -190,17 +190,9 @@ export const runCommand = new Command('run')
 
     try {
       if (isLocalMode) {
-        // Local mode: docker compose up
         startFromCompose(challengeDir!);
       } else {
-        // Registry mode: pull images + docker run
-        spinnerContainers.text = `Pulling ${containerSpec!.targetImage}...`;
-        const targetFallback = pullImage(containerSpec!.targetImage);
-        spinnerContainers.text = `Pulling ${containerSpec!.kaliImage}...`;
-        const kaliFallback = pullImage(containerSpec!.kaliImage);
-        const needsEmulation = targetFallback || kaliFallback;
-        spinnerContainers.text = 'Starting containers...';
-        startContainers(containerSpec!, needsEmulation ? 'linux/amd64' : undefined);
+        pullAndStartContainers(containerSpec!, (msg) => { spinnerContainers.text = msg; });
       }
 
       spinnerContainers.text = 'Waiting for target to be ready...';
