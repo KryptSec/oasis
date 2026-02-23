@@ -3,8 +3,11 @@ import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status } from '../lib/display.js';
+
 import { calculateKSS, calculateEfficacy } from '../lib/scoring.js';
 import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
+import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
+
 import { analyzeRun } from '../lib/analyzer.js';
 import { saveAnalysisResult } from '../lib/runner.js';
 import { printAnalysisSummary } from '../lib/report.js';
@@ -47,7 +50,15 @@ export const analyzeCommand = new Command('analyze')
 
       for (const file of files) {
         const id = file.replace('.json', '');
-        const analysisPath = pathResolve(getResultsDir(), `${id}.analysis.json`);
+        let analysisPath: string;
+        try {
+          analysisPath = resolveAnalysisPath(id);
+        } catch (error) {
+          if (error instanceof InvalidRunIdError || error instanceof ResultPathEscapeError) {
+            continue;
+          }
+          throw error;
+        }
         if (options.reanalyze || !existsSync(analysisPath)) {
           runIds.push(id);
         }
@@ -83,7 +94,20 @@ export const analyzeCommand = new Command('analyze')
     const challengesDir = getChallengesDir();
 
     for (const id of runIds) {
-      const resultPath = pathResolve(getResultsDir(), `${id}.json`);
+      let resultPath: string;
+      try {
+        resultPath = resolveResultPath(id);
+      } catch (error) {
+        if (error instanceof InvalidRunIdError || error instanceof ResultPathEscapeError) {
+          console.error(colors.red(`${status.error} Invalid run ID: ${error.runId}`));
+          console.log(colors.gray('  Use only letters, numbers, "_" or "-".'));
+          if (runIds.length === 1) {
+            process.exit(1);
+          }
+          continue;
+        }
+        throw error;
+      }
 
       if (!existsSync(resultPath)) {
         console.error(colors.red(`${status.error} Run not found: ${id}`));

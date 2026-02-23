@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status, formatScore, formatTime, formatDifficulty } from '../lib/display.js';
 import { calculateKSS, calculateEfficacy, calculateEfficacyFromResults } from '../lib/scoring.js';
 import { getResultsDir, getChallengesDir } from '../lib/config.js';
+import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 import type { RunResult, AnalysisResult, ChallengeConfig } from '../lib/types.js';
 
 export const resultsCommand = new Command('results')
@@ -93,7 +94,20 @@ resultsCommand
   .description('Show details of a specific run')
   .argument('<run-id>', 'Run ID to show')
   .action((runId) => {
-    const resultPath = pathResolve(getResultsDir(), `${runId}.json`);
+    let resultPath: string;
+    let analysisPath: string;
+    try {
+      resultPath = resolveResultPath(runId);
+      analysisPath = resolveAnalysisPath(runId);
+    } catch (error) {
+      if (error instanceof InvalidRunIdError || error instanceof ResultPathEscapeError) {
+        console.error(colors.red(`\n${status.error} Invalid run ID: ${runId}`));
+        console.log(colors.gray('  Use only letters, numbers, "_" or "-".'));
+        process.exit(1);
+      }
+      throw error;
+    }
+
     if (!existsSync(resultPath)) {
       console.error(colors.red(`\n${status.error} Run not found: ${runId}`));
       process.exit(1);
@@ -122,7 +136,6 @@ resultsCommand
     }
 
     // Check for analysis
-    const analysisPath = pathResolve(getResultsDir(), `${runId}.analysis.json`);
     if (existsSync(analysisPath)) {
       console.log(colors.gray(`\n  Analysis: available (oasis analyze ${runId} to view)`));
     } else {
@@ -151,8 +164,23 @@ resultsCommand
       process.exit(1);
     }
 
-    const path1 = pathResolve(getResultsDir(), `${id1}.json`);
-    const path2 = pathResolve(getResultsDir(), `${id2}.json`);
+    let path1: string;
+    let path2: string;
+    let ap1: string;
+    let ap2: string;
+    try {
+      path1 = resolveResultPath(id1);
+      path2 = resolveResultPath(id2);
+      ap1 = resolveAnalysisPath(id1);
+      ap2 = resolveAnalysisPath(id2);
+    } catch (error) {
+      if (error instanceof InvalidRunIdError || error instanceof ResultPathEscapeError) {
+        console.error(colors.red(`\n${status.error} Invalid run ID: ${error.runId}`));
+        console.log(colors.gray('  Use only letters, numbers, "_" or "-".'));
+        process.exit(1);
+      }
+      throw error;
+    }
 
     if (!existsSync(path1)) {
       console.error(colors.red(`\n${status.error} Run not found: ${id1}`));
@@ -169,8 +197,6 @@ resultsCommand
     // Load analyses if available
     let a1: AnalysisResult | null = null;
     let a2: AnalysisResult | null = null;
-    const ap1 = pathResolve(getResultsDir(), `${id1}.analysis.json`);
-    const ap2 = pathResolve(getResultsDir(), `${id2}.analysis.json`);
     if (existsSync(ap1)) a1 = JSON.parse(readFileSync(ap1, 'utf-8'));
     if (existsSync(ap2)) a2 = JSON.parse(readFileSync(ap2, 'utf-8'));
 

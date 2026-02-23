@@ -1,8 +1,7 @@
 import { Command } from 'commander';
-import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { colors, status } from '../lib/display.js';
-import { getResultsDir } from '../lib/config.js';
+import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 import {
   printColorReport,
   generateTextReport,
@@ -20,7 +19,20 @@ export const reportCommand = new Command('report')
   .option('-f, --format <format>', 'Output format: terminal, text, json, md', 'terminal')
   .option('-o, --output <path>', 'Write report to file (instead of stdout)')
   .action((runId, options) => {
-    const resultPath = pathResolve(getResultsDir(), `${runId}.json`);
+    let resultPath: string;
+    let analysisPath: string;
+    try {
+      resultPath = resolveResultPath(runId);
+      analysisPath = resolveAnalysisPath(runId);
+    } catch (error) {
+      if (error instanceof InvalidRunIdError || error instanceof ResultPathEscapeError) {
+        console.error(colors.red(`\n${status.error} Invalid run ID: ${runId}`));
+        console.log(colors.gray('  Use only letters, numbers, "_" or "-".'));
+        process.exit(1);
+      }
+      throw error;
+    }
+
     if (!existsSync(resultPath)) {
       console.error(colors.red(`\n${status.error} Run not found: ${runId}`));
       process.exit(1);
@@ -29,7 +41,6 @@ export const reportCommand = new Command('report')
     const result: RunResult = JSON.parse(readFileSync(resultPath, 'utf-8'));
 
     // Load analysis if available
-    const analysisPath = pathResolve(getResultsDir(), `${runId}.analysis.json`);
     let analysis: AnalysisResult | undefined;
     if (existsSync(analysisPath)) {
       try {
