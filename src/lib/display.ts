@@ -40,13 +40,13 @@ export function formatTime(seconds: number): string {
 
 // Print the score summary line
 export function printScoreSummary(score: {
-  kss: number;
+  ksm: number;
   efficacy: number;
   efficiency: number;
   time: number;
 }): void {
   const parts = [
-    `${colors.white('KSM Score:')} ${formatScore(score.kss)}`,
+    `${colors.white('KSM Score:')} ${formatScore(score.ksm)}`,
     `${colors.white('Efficacy:')} ${colors.green(score.efficacy.toString())}`,
     `${colors.white('Efficiency:')} ${colors.yellow(score.efficiency.toFixed(1))}`,
     `${colors.white('Time:')} ${colors.cyan(formatTime(score.time))}`,

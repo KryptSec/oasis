@@ -80,6 +80,21 @@ export function getConfigDir(): string {
   return CONFIG_DIR;
 }
 
+// Run-ID validation and safe path resolution
+const SAFE_RUN_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export function resolveResultPath(runId: string, suffix: '.json' | '.analysis.json' = '.json'): string {
+  if (!SAFE_RUN_ID_PATTERN.test(runId)) {
+    throw new Error(`Invalid run ID: "${runId}". Run IDs may only contain letters, numbers, hyphens, and underscores.`);
+  }
+  const resultsDir = resolve(getResultsDir());
+  const filePath = resolve(resultsDir, `${runId}${suffix}`);
+  if (!filePath.startsWith(resultsDir)) {
+    throw new Error(`Invalid run ID: "${runId}". Path escapes results directory.`);
+  }
+  return filePath;
+}
+
 // Registry URL resolution: config → env var → default
 const DEFAULT_REGISTRY_URL = 'https://raw.githubusercontent.com/KryptSec/oasis-challenges/main/index.json';
 

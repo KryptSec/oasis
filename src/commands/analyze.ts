@@ -4,7 +4,7 @@ import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status } from '../lib/display.js';
 
-import { calculateKSS, calculateEfficacyFromResults } from '../lib/scoring.js';
+import { calculateKSM, calculateEfficacyFromResults } from '../lib/scoring.js';
 import { getApiKey, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 
@@ -160,7 +160,7 @@ export const analyzeCommand = new Command('analyze')
           printAnalysisSummary(analysis);
         } else {
           const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
-          const score = calculateKSS(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults));
+          const score = calculateKSM(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults));
           console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
         }
       } catch (error) {

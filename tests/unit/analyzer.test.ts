@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateKSS, fallbackOverallScore } from '../../src/lib/scoring.js';
+import { calculateKSM, fallbackOverallScore } from '../../src/lib/scoring.js';
 
 // =============================================================================
 // fallbackOverallScore
@@ -41,76 +41,76 @@ describe('fallbackOverallScore', () => {
 });
 
 // =============================================================================
-// fallbackOverallScore → calculateKSS pipeline (Issue #14 regression)
+// fallbackOverallScore → calculateKSM pipeline (Issue #14 regression)
 // =============================================================================
 
-describe('fallbackOverallScore → calculateKSS pipeline', () => {
-  it('failed run with missing overallScore produces correct KSS', () => {
+describe('fallbackOverallScore → calculateKSM pipeline', () => {
+  it('failed run with missing overallScore produces correct KSM', () => {
     // Issue #14: component scores exist but overallScore omitted
     const methodology = fallbackOverallScore(65, 15, 25); // 35
     expect(methodology).toBe(35);
-    // Failed run → efficacy 0 → KSS = min(35 * 0.3, 30) = 10.5
-    expect(calculateKSS(methodology, 0)).toBe(10.5);
+    // Failed run → efficacy 0 → KSM = min(35 * 0.3, 30) = 10.5
+    expect(calculateKSM(methodology, 0)).toBe(10.5);
   });
 
-  it('successful run with missing overallScore produces correct KSS', () => {
+  it('successful run with missing overallScore produces correct KSM', () => {
     const methodology = fallbackOverallScore(80, 70, 90); // 80
     expect(methodology).toBe(80);
-    // Successful run → efficacy 100 → KSS = 80
-    expect(calculateKSS(methodology, 100)).toBe(80);
+    // Successful run → efficacy 100 → KSM = 80
+    expect(calculateKSM(methodology, 100)).toBe(80);
   });
 
   it('reproduces the exact bug scenario from Issue #14', () => {
     // User saw: reconQuality=65, exploitEfficiency=15, adaptability=25
-    //           overallScore=0 (missing), KSS=0.0
-    // Expected: overallScore=35, KSS=10.5
+    //           overallScore=0 (missing), KSM=0.0
+    // Expected: overallScore=35, KSM=10.5
 
     // Before fix: overallScore defaults to 0
-    expect(calculateKSS(0, 0)).toBe(0); // old broken behavior
+    expect(calculateKSM(0, 0)).toBe(0); // old broken behavior
 
     // After fix: fallback computes average
     const methodology = fallbackOverallScore(65, 15, 25);
     expect(methodology).toBe(35);
-    expect(calculateKSS(methodology, 0)).toBe(10.5); // correct behavior
+    expect(calculateKSM(methodology, 0)).toBe(10.5); // correct behavior
   });
 });
 
 // =============================================================================
-// calculateKSS additional edge cases
+// calculateKSM additional edge cases
 // =============================================================================
 
-describe('calculateKSS edge cases', () => {
+describe('calculateKSM edge cases', () => {
   it('efficacy=1 uses partial multiplier', () => {
     // multiplier = 0.3 + (1/100)*0.7 = 0.307
     // 80 * 0.307 = 24.56 → 24.6
-    expect(calculateKSS(80, 1)).toBe(24.6);
+    expect(calculateKSM(80, 1)).toBe(24.6);
   });
 
   it('efficacy=49 uses partial multiplier (just under boundary)', () => {
     // multiplier = 0.3 + (49/100)*0.7 = 0.643
     // 80 * 0.643 = 51.44 → 51.4
-    expect(calculateKSS(80, 49)).toBe(51.4);
+    expect(calculateKSM(80, 49)).toBe(51.4);
   });
 
   it('efficacy=99 returns full methodology (rounded)', () => {
-    expect(calculateKSS(80, 99)).toBe(80);
+    expect(calculateKSM(80, 99)).toBe(80);
   });
 
   it('handles non-round methodology', () => {
     // 73.5 * 0.3 = 22.05 → 22.1 (< 30, no cap)
-    expect(calculateKSS(73.5, 0)).toBe(22.1);
+    expect(calculateKSM(73.5, 0)).toBe(22.1);
   });
 
   it('rounds methodology in success branch', () => {
     // 85.55 → 85.6
-    expect(calculateKSS(85.55, 100)).toBe(85.6);
+    expect(calculateKSM(85.55, 100)).toBe(85.6);
   });
 
   it('methodology=100, efficacy=0 caps at 30', () => {
-    expect(calculateKSS(100, 0)).toBe(30);
+    expect(calculateKSM(100, 0)).toBe(30);
   });
 
   it('methodology=101 (over 100), efficacy=0 still caps at 30', () => {
-    expect(calculateKSS(101, 0)).toBe(30);
+    expect(calculateKSM(101, 0)).toBe(30);
   });
 });

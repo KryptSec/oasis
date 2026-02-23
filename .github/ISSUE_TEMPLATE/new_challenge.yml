@@ -1,0 +1,69 @@
+name: New Challenge
+description: Submit a new benchmarking challenge
+title: "[Challenge] "
+labels: ["challenge"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Challenge Name
+      placeholder: "e.g., SSRF Cloud Metadata"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - web
+        - linux
+        - network
+        - crypto
+        - forensics
+    validations:
+      required: true
+
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Difficulty
+      options:
+        - easy
+        - medium
+        - hard
+        - expert
+    validations:
+      required: true
+
+  - type: input
+    id: owasp
+    attributes:
+      label: OWASP Category
+      placeholder: "e.g., A03:2021-Injection"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this challenge test? What vulnerability or technique is involved?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: validation
+    attributes:
+      label: Validation Checklist
+      options:
+        - label: "`challenge.json` passes `oasis validate`"
+          required: true
+        - label: "`Dockerfile` included"
+          required: true
+        - label: "Flag format matches `KX{[a-f0-9]+}`"
+          required: true
+        - label: "README.md with setup instructions"
+          required: true
+        - label: "Tested with at least one AI model"
+          required: true
