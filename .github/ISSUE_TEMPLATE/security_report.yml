@@ -1,0 +1,71 @@
+name: Security Report
+description: Report a security vulnerability in OASIS
+title: "[Security] "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **For critical vulnerabilities**, please email security@kryptsec.com instead of filing a public issue.
+
+        Use this template for medium/low severity issues that are safe to discuss publicly.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low - information disclosure, minor issue
+        - Medium - requires specific conditions to exploit
+        - High - directly exploitable, significant impact
+        - Critical - use email instead (security@kryptsec.com)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Vulnerability Category
+      options:
+        - Command Injection
+        - Path Traversal
+        - Input Validation
+        - Authentication / Authorization
+        - Information Disclosure
+        - Docker Escape / Container Security
+        - Dependency Vulnerability
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the vulnerability. Include affected files and line numbers if known.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can this be triggered?
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What could an attacker achieve by exploiting this?
+    validations:
+      required: true
+
+  - type: textarea
+    id: fix
+    attributes:
+      label: Suggested Fix
+      description: If you have ideas for how to fix this, describe them here.
+    validations:
+      required: false

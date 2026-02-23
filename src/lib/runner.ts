@@ -608,6 +608,10 @@ export function saveAnalysisResult(
     mkdirSync(resultsDir, { recursive: true });
   }
 
+  const SAFE_RUN_ID = /^[A-Za-z0-9_-]+$/;
+  if (!SAFE_RUN_ID.test(runId)) {
+    throw new Error(`Invalid run ID: "${runId}"`);
+  }
   const jsonPath = resolve(resultsDir, `${runId}.analysis.json`);
   writeFileSync(jsonPath, JSON.stringify(analysis, null, 2));
 
