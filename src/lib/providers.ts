@@ -32,7 +32,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'xAI',
     baseUrl: 'https://api.x.ai/v1',
     envKey: 'XAI_API_KEY',
-    models: ['grok-3-latest', 'grok-2-1212'],
+    models: ['grok-3-latest', 'grok-4-0709', 'grok-2-1212'],
     isOpenAICompatible: true,
   },
   google: {
@@ -40,7 +40,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'Google',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     envKey: 'GOOGLE_API_KEY',
-    models: ['gemini-2.0-flash', 'gemini-1.5-pro'],
+    models: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro'],
     isOpenAICompatible: true,
   },
   ollama: {

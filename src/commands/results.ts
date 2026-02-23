@@ -75,7 +75,7 @@ resultsCommand
       let score = '-';
       if (analysis) {
         try {
-          const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy?.overallScore ?? 0;
           const s = calculateKSM(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults));
           score = s.toString();
         } catch {}
@@ -239,8 +239,8 @@ resultsCommand
         }
       }
 
-      const s1 = calculateKSM(a1?.rubricScore?.total ?? a1?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r1.challenge, r1.modelVersion, allResults));
-      const s2 = calculateKSM(a2?.rubricScore?.total ?? a2?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r2.challenge, r2.modelVersion, allResults));
+      const s1 = calculateKSM(a1?.rubricScore?.percentage ?? a1?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r1.challenge, r1.modelVersion, allResults));
+      const s2 = calculateKSM(a2?.rubricScore?.percentage ?? a2?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r2.challenge, r2.modelVersion, allResults));
       rows.push(['Score', s1 ? s1.toString() : 'N/A', s2 ? s2.toString() : 'N/A']);
       rows.push(['Approach', a1?.behavior?.approach || 'N/A', a2?.behavior?.approach || 'N/A']);
     }
@@ -329,7 +329,7 @@ resultsCommand
     for (const { result, analysis } of allLoadedEntries) {
       let score = 0;
       if (analysis) {
-        const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+        const methodology = analysis.rubricScore?.percentage ?? analysis.strategy?.overallScore ?? 0;
         const efficacy = calculateEfficacyFromResults(result.challenge, result.modelVersion, allLoadedResults);
         score = calculateKSM(methodology, efficacy);
       }
@@ -535,7 +535,7 @@ function compareByChallengeId(challengeId: string): void {
   for (const { result, analysis } of loadedEntries) {
     let score = 0;
     if (analysis) {
-      const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+      const methodology = analysis.rubricScore?.percentage ?? analysis.strategy?.overallScore ?? 0;
       const efficacy = calculateEfficacyFromResults(result.challenge, result.modelVersion, challengeResults);
       score = calculateKSM(methodology, efficacy);
     }

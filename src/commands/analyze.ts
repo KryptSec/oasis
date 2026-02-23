@@ -159,7 +159,7 @@ export const analyzeCommand = new Command('analyze')
         if (runIds.length === 1) {
           printAnalysisSummary(analysis);
         } else {
-          const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
+          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
           const score = calculateKSM(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults));
           console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
         }
