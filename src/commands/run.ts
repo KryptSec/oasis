@@ -8,7 +8,7 @@ import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, 
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
-import { checkDockerRunning, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
+import { ensureDocker, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
 import { QuotaExceededError } from '../lib/retry.js';
 import { pullImage, startContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
 import { fetchRegistryIndex, fetchChallengeConfig, buildContainerSpec } from '../lib/registry.js';
@@ -154,14 +154,28 @@ export const runCommand = new Command('run')
     // Docker: check + start containers
     // =========================================================================
 
-    const dockerCheck = checkDockerRunning();
+    const spinnerDocker = ora({
+      text: 'Checking Docker...',
+      prefixText: status.info,
+    }).start();
+
+    const dockerCheck = await ensureDocker(
+      (msg) => { spinnerDocker.text = msg; },
+    );
+
     if (!dockerCheck.ok) {
-      console.error(colors.red(`\n${status.error} ${dockerCheck.errors[0]}`));
+      spinnerDocker.fail(dockerCheck.errors[0]);
       for (const hint of dockerCheck.hints) {
         console.log(colors.gray(`  ${hint}`));
       }
       console.log();
       process.exit(1);
+    }
+
+    if (dockerCheck.autoStarted) {
+      spinnerDocker.succeed('Docker Desktop started');
+    } else {
+      spinnerDocker.succeed('Docker is running');
     }
 
     const containerName = challengeConfig!.containerName || `${challenge}-kali-1`;
@@ -181,11 +195,12 @@ export const runCommand = new Command('run')
       } else {
         // Registry mode: pull images + docker run
         spinnerContainers.text = `Pulling ${containerSpec!.targetImage}...`;
-        pullImage(containerSpec!.targetImage);
+        const targetFallback = pullImage(containerSpec!.targetImage);
         spinnerContainers.text = `Pulling ${containerSpec!.kaliImage}...`;
-        pullImage(containerSpec!.kaliImage);
+        const kaliFallback = pullImage(containerSpec!.kaliImage);
+        const needsEmulation = targetFallback || kaliFallback;
         spinnerContainers.text = 'Starting containers...';
-        startContainers(containerSpec!);
+        startContainers(containerSpec!, needsEmulation ? 'linux/amd64' : undefined);
       }
 
       spinnerContainers.text = 'Waiting for target to be ready...';

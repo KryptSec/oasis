@@ -21,16 +21,37 @@ function shellEscape(s: string): string {
 }
 
 /**
- * Pull a Docker image. Streams progress lines to onProgress if provided.
+ * Pull a Docker image. Tries native platform first, falls back to linux/amd64
+ * if the image has no matching manifest (common for challenge images on Apple Silicon).
+ * Returns true if the amd64 fallback was used.
  */
-export function pullImage(image: string, onProgress?: (line: string) => void): void {
+export function pullImage(image: string, onProgress?: (line: string) => void): boolean {
   if (onProgress) {
     onProgress(`Pulling ${image}...`);
   }
-  execSync(`docker pull ${shellEscape(image)}`, {
+
+  try {
+    execSync(`docker pull ${shellEscape(image)}`, {
+      stdio: onProgress ? 'inherit' : 'pipe',
+      encoding: 'utf-8',
+    });
+    return false;
+  } catch (err: any) {
+    const msg = err?.stderr || err?.message || '';
+    if (!msg.includes('no matching manifest') && !msg.includes('no match for platform')) {
+      throw err;
+    }
+  }
+
+  // Fallback: pull with explicit amd64 platform
+  if (onProgress) {
+    onProgress(`Pulling ${image} (linux/amd64 fallback)...`);
+  }
+  execSync(`docker pull --platform linux/amd64 ${shellEscape(image)}`, {
     stdio: onProgress ? 'inherit' : 'pipe',
     encoding: 'utf-8',
   });
+  return true;
 }
 
 /**
@@ -53,14 +74,17 @@ export function ensureNetwork(name: string): void {
 /**
  * Start containers from a ContainerSpec using docker run.
  * Cleans up stale containers first, ensures the network, then runs both.
+ * Pass platform (e.g. 'linux/amd64') to force a specific platform for emulation.
  */
-export function startContainers(spec: ContainerSpec): void {
+export function startContainers(spec: ContainerSpec, platform?: string): void {
   cleanupStale(spec);
   ensureNetwork(spec.network);
 
+  const platformFlag = platform ? `--platform ${shellEscape(platform)} ` : '';
+
   // Start target container
   execSync(
-    `docker run -d --name ${shellEscape(spec.targetContainerName)} ` +
+    `docker run -d ${platformFlag}--name ${shellEscape(spec.targetContainerName)} ` +
     `--hostname target --network ${shellEscape(spec.network)} ` +
     `${shellEscape(spec.targetImage)}`,
     { stdio: 'pipe', encoding: 'utf-8' }
@@ -68,7 +92,7 @@ export function startContainers(spec: ContainerSpec): void {
 
   // Start kali container
   execSync(
-    `docker run -d --name ${shellEscape(spec.kaliContainerName)} ` +
+    `docker run -d ${platformFlag}--name ${shellEscape(spec.kaliContainerName)} ` +
     `--hostname kali --network ${shellEscape(spec.network)} ` +
     `${shellEscape(spec.kaliImage)} sleep infinity`,
     { stdio: 'pipe', encoding: 'utf-8' }

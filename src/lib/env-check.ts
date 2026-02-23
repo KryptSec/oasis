@@ -13,6 +13,13 @@ export interface EnvCheckResult {
   hints: string[];
 }
 
+export interface DockerStartResult {
+  ok: boolean;
+  autoStarted: boolean;
+  errors: string[];
+  hints: string[];
+}
+
 const REQUIRED_KALI_TOOLS = ['curl', 'wget', 'python3'];
 
 /** Escape a string for safe inclusion in a shell command (single-quote wrapping). */
@@ -36,6 +43,77 @@ export function checkDockerRunning(): EnvCheckResult {
     hints.push('Verify with: docker ps');
     return { ok: false, errors, hints };
   }
+}
+
+/**
+ * Ensure Docker is running, auto-starting Docker Desktop on macOS if needed.
+ */
+export async function ensureDocker(
+  onStatus?: (message: string) => void,
+  timeoutMs = 60_000,
+): Promise<DockerStartResult> {
+  // Check if docker is already running
+  try {
+    execSync('docker ps', { encoding: 'utf-8', stdio: 'pipe' });
+    return { ok: true, autoStarted: false, errors: [], hints: [] };
+  } catch {
+    // Docker not running — try to auto-start on macOS
+  }
+
+  if (process.platform !== 'darwin') {
+    return {
+      ok: false,
+      autoStarted: false,
+      errors: ['Docker is not running or not accessible'],
+      hints: [
+        'Start Docker Desktop (or your Docker daemon) and try again',
+        'Verify with: docker ps',
+      ],
+    };
+  }
+
+  // macOS: try to launch Docker Desktop
+  onStatus?.('Starting Docker Desktop...');
+  try {
+    execSync('open --background -a Docker', { stdio: 'pipe' });
+  } catch {
+    return {
+      ok: false,
+      autoStarted: false,
+      errors: ['Failed to start Docker Desktop'],
+      hints: [
+        'Install Docker Desktop from https://www.docker.com/products/docker-desktop',
+        'Or start it manually and try again',
+      ],
+    };
+  }
+
+  // Poll until Docker daemon is ready
+  const start = Date.now();
+  const pollInterval = 2500;
+
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    onStatus?.(`Waiting for Docker to be ready... (${elapsed}s)`);
+
+    try {
+      execSync('docker ps', { encoding: 'utf-8', stdio: 'pipe' });
+      return { ok: true, autoStarted: true, errors: [], hints: [] };
+    } catch {
+      // Not ready yet
+    }
+  }
+
+  return {
+    ok: false,
+    autoStarted: false,
+    errors: ['Docker Desktop failed to start within timeout'],
+    hints: [
+      'Docker Desktop may need more time — try starting it manually',
+      'Verify with: docker ps',
+    ],
+  };
 }
 
 /**
