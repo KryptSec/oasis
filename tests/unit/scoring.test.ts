@@ -9,6 +9,8 @@ import {
   getScoreSummary,
   calculateKSS,
   fallbackOverallScore,
+  calculateEfficacy,
+  calculateEfficacyFromResults,
 } from '../../src/lib/scoring.js';
 import type { RunResult, ChallengeScoring, RubricScore } from '../../src/lib/types.js';
 
@@ -325,5 +327,83 @@ describe('calculateKSS', () => {
 
   it('returns full methodology at efficacy boundary of 50', () => {
     expect(calculateKSS(80, 50)).toBe(80);
+  });
+});
+
+// =============================================================================
+// calculateEfficacyFromResults
+// =============================================================================
+
+describe('calculateEfficacyFromResults', () => {
+  const makeResult = (challenge: string, modelVersion: string, success: boolean): RunResult =>
+    ({ challenge, modelVersion, success } as unknown as RunResult);
+
+  it('returns 100 when all matching runs succeed', () => {
+    const results = [
+      makeResult('sqli-101', 'claude-sonnet', true),
+      makeResult('sqli-101', 'claude-sonnet', true),
+      makeResult('sqli-101', 'claude-sonnet', true),
+    ];
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', results)).toBe(100);
+  });
+
+  it('returns 0 when all matching runs fail', () => {
+    const results = [
+      makeResult('sqli-101', 'claude-sonnet', false),
+      makeResult('sqli-101', 'claude-sonnet', false),
+    ];
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', results)).toBe(0);
+  });
+
+  it('returns correct partial efficacy (spec example: 2/5 = 40%)', () => {
+    const results = [
+      makeResult('sqli-101', 'grok-2', true),
+      makeResult('sqli-101', 'grok-2', false),
+      makeResult('sqli-101', 'grok-2', true),
+      makeResult('sqli-101', 'grok-2', false),
+      makeResult('sqli-101', 'grok-2', false),
+    ];
+    expect(calculateEfficacyFromResults('sqli-101', 'grok-2', results)).toBe(40);
+  });
+
+  it('filters by challenge and model, ignoring unrelated runs', () => {
+    const results = [
+      makeResult('sqli-101', 'claude-sonnet', true),
+      makeResult('sqli-101', 'claude-sonnet', false),
+      makeResult('xss-201', 'claude-sonnet', true),   // different challenge
+      makeResult('sqli-101', 'gpt-4o', true),          // different model
+    ];
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', results)).toBe(50);
+  });
+
+  it('returns 0 when no matching runs exist', () => {
+    const results = [
+      makeResult('xss-201', 'claude-sonnet', true),
+    ];
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', results)).toBe(0);
+  });
+
+  it('returns 0 for empty results array', () => {
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', [])).toBe(0);
+  });
+
+  it('handles single run correctly', () => {
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', [
+      makeResult('sqli-101', 'claude-sonnet', true),
+    ])).toBe(100);
+
+    expect(calculateEfficacyFromResults('sqli-101', 'claude-sonnet', [
+      makeResult('sqli-101', 'claude-sonnet', false),
+    ])).toBe(0);
+  });
+});
+
+// =============================================================================
+// calculateEfficacy (disk-based)
+// =============================================================================
+
+describe('calculateEfficacy', () => {
+  it('returns 0 for non-existent results directory', () => {
+    expect(calculateEfficacy('sqli-101', 'claude-sonnet', '/tmp/nonexistent-oasis-dir')).toBe(0);
   });
 });
