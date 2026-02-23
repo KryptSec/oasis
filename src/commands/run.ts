@@ -336,7 +336,7 @@ export const runCommand = new Command('run')
           printAnalysisSummary(analysis);
 
           // Print score summary
-          const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
+          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
           const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
           printScoreSummary({
             ksm: calculateKSM(methodology, efficacy),

@@ -391,7 +391,7 @@ export async function runBenchmarkFlow(): Promise<void> {
 
           printAnalysisSummary(analysis);
 
-          const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
+          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
           const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
           printScoreSummary({
             ksm: calculateKSM(methodology, efficacy),

@@ -33,7 +33,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'xai',
     description: 'Grok models from xAI',
-    models: ['grok-2-1212', 'grok-2-vision-1212'],
+    models: ['grok-3-latest', 'grok-4-0709', 'grok-2-1212'],
     envVar: 'XAI_API_KEY',
     configKey: 'xai',
     urlConfigurable: false,
@@ -41,7 +41,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'google',
     description: 'Gemini models from Google',
-    models: ['gemini-2.0-flash-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    models: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro'],
     envVar: 'GOOGLE_API_KEY',
     configKey: 'google',
     urlConfigurable: false,

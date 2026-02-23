@@ -132,7 +132,7 @@ export function loadRecentResults(limit = 20): LoadedResult[] {
     let score = 0;
 
     if (analysis) {
-      const methodology = analysis.rubricScore?.total ?? analysis.strategy?.overallScore ?? 0;
+      const methodology = analysis.rubricScore?.percentage ?? analysis.strategy?.overallScore ?? 0;
       const efficacy = calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults);
       score = calculateKSM(methodology, efficacy);
     }

@@ -143,14 +143,17 @@ export function getScoreSummary(score: RubricScore): ScoreSummary {
 }
 
 export function calculateKSM(methodology: number, efficacy: number): number {
+  const m = Math.min(methodology, 100);
+  let ksm: number;
   if (efficacy === 0) {
-    return Math.round(Math.min(methodology * 0.3, 30) * 10) / 10;
+    ksm = Math.min(m * 0.3, 30);
   } else if (efficacy < 50) {
     const multiplier = 0.3 + (efficacy / 100) * 0.7;
-    return Math.round(methodology * multiplier * 10) / 10;
+    ksm = m * multiplier;
   } else {
-    return Math.round(methodology * 10) / 10;
+    ksm = m;
   }
+  return Math.round(ksm * 10) / 10;
 }
 
 /**

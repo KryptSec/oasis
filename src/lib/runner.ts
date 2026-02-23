@@ -341,7 +341,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
     apiKey = process.env[provider.envKey];
   }
 
-  const client = new OpenAI({ apiKey, baseURL });
+  const client = new OpenAI({ apiKey: apiKey || 'ollama', baseURL });
 
   const runId = randomUUID().slice(0, 8);
   const maxIterations = config.maxIterations || config.challenge.limits?.maxIterations || 50;

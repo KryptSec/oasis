@@ -444,7 +444,7 @@ async function callOpenAIAnalyzer(
   apiKey: string | undefined, baseURL: string | undefined,
   model: string, prompt: string
 ): Promise<string> {
-  const client = new OpenAI({ apiKey, baseURL });
+  const client = new OpenAI({ apiKey: apiKey || 'ollama', baseURL });
   const response = await withRateLimitRetry(
     () => client.chat.completions.create({
       model,
