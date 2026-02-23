@@ -3,7 +3,7 @@ import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { colors, status } from '../lib/display.js';
-import { calculateKSS } from '../lib/scoring.js';
+import { calculateKSS, calculateEfficacy } from '../lib/scoring.js';
 import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { saveAnalysisResult } from '../lib/runner.js';
@@ -126,7 +126,7 @@ export const analyzeCommand = new Command('analyze')
           printAnalysisSummary(analysis);
         } else {
           const methodology = analysis.rubricScore?.total ?? analysis.strategy.overallScore;
-          const score = calculateKSS(methodology, result.success ? 100 : 0);
+          const score = calculateKSS(methodology, calculateEfficacy(result.challenge, result.modelVersion, getResultsDir()));
           console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
         }
       } catch (error) {
