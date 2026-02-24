@@ -1,5 +1,5 @@
 import { select } from '@inquirer/prompts';
-import { colors, status, formatScore, formatTime } from '../lib/display.js';
+import { colors, status, formatScore, formatTime, printBox } from '../lib/display.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
 import { loadRecentResults } from './helpers.js';
 import type { LoadedResult } from './helpers.js';
@@ -44,22 +44,24 @@ export async function viewResultsFlow(): Promise<void> {
 async function showRunDetail(entry: LoadedResult): Promise<void> {
   const { result, analysis } = entry;
 
-  console.log(colors.white.bold(`\n  Run: ${result.id}`));
-  console.log(colors.gray('  ' + '─'.repeat(50)));
-  console.log(`  ${colors.gray('Challenge:')}    ${colors.white(result.challenge)}`);
-  console.log(`  ${colors.gray('Model:')}        ${colors.white(result.modelVersion)}`);
-  console.log(`  ${colors.gray('Provider:')}     ${colors.white(result.model)}`);
-  console.log(`  ${colors.gray('Result:')}       ${result.success ? colors.green('SUCCESS') : colors.red('FAILED')}`);
-  console.log(`  ${colors.gray('Flag:')}         ${result.flag ? colors.green(result.flag) : colors.gray('Not found')}`);
-  console.log(`  ${colors.gray('Time:')}         ${colors.yellow(result.totalTime.toFixed(1) + 's')}`);
-  console.log(`  ${colors.gray('Iterations:')}   ${colors.yellow(result.iterations.toString())}`);
-  console.log(`  ${colors.gray('Tokens:')}       ${colors.cyan(result.tokens.total.toLocaleString())}`);
-  console.log(`  ${colors.gray('Tools Used:')}   ${colors.white(result.toolsUsed?.join(', ') || 'N/A')}`);
+  console.log();
+  printBox([
+    `  ${colors.gray('Run ID')}       ${colors.yellow(result.id)}`,
+    `  ${colors.gray('Challenge')}    ${colors.white(result.challenge)}`,
+    `  ${colors.gray('Model')}        ${colors.cyan(result.modelVersion)}`,
+    `  ${colors.gray('Provider')}     ${colors.white(result.model)}`,
+    `  ${colors.gray('Result')}       ${result.success ? colors.green('SUCCESS') : colors.red('FAILED')}`,
+    `  ${colors.gray('Flag')}         ${result.flag ? colors.green(result.flag) : colors.gray('Not found')}`,
+    `  ${colors.gray('Time')}         ${colors.yellow(result.totalTime.toFixed(1) + 's')}`,
+    `  ${colors.gray('Iterations')}   ${colors.yellow(result.iterations.toString())}`,
+    `  ${colors.gray('Tokens')}       ${colors.cyan(result.tokens.total.toLocaleString())}`,
+    `  ${colors.gray('Tools')}        ${colors.white(result.toolsUsed?.join(', ') || 'N/A')}`,
+  ].join('\n'), { title: 'Run Details' });
 
   if (result.techniquesUsed?.length > 0) {
-    console.log(colors.gray('\n  ATT&CK Techniques:'));
+    console.log();
     for (const tech of result.techniquesUsed) {
-      console.log(`    ${colors.yellow(tech.id)} ${colors.white(tech.name)} ${colors.gray(`(${tech.tactic})`)}`);
+      console.log(`  ${colors.yellow(tech.id)} ${colors.white(tech.name)} ${colors.gray(`(${tech.tactic})`)}`);
     }
   }
 

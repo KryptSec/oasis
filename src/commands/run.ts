@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync } from 'fs';
-import { colors, status, printScoreSummary } from '../lib/display.js';
+import { colors, status, printScoreSummary, printBox } from '../lib/display.js';
 import { calculateKSM, calculateEfficacy } from '../lib/scoring.js';
 import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
@@ -245,14 +245,17 @@ export const runCommand = new Command('run')
       ? (options.analyzerUrl || getEffectiveProviderUrl(analyzerProvider) || undefined)
       : undefined;
 
-    // Display run info
+    // Display run config card
     console.log();
-    console.log(colors.gray(`Challenge: ${challengeConfig!.name || challenge}`));
-    console.log(colors.gray(`Provider:  ${provider} (${model})`));
-    console.log(colors.gray(`Mode:      ${isLocalMode ? 'Local' : 'Registry'}`));
+    const configLines = [
+      `  ${colors.gray('Challenge')}   ${colors.white(challengeConfig!.name || challenge)}`,
+      `  ${colors.gray('Provider')}    ${colors.cyan(provider)} ${colors.gray(`(${model})`)}`,
+      `  ${colors.gray('Mode')}        ${isLocalMode ? colors.yellow('Local') : colors.green('Registry')}`,
+    ];
     if (challengeConfig!.limits) {
-      console.log(colors.gray(`Limits:    ${challengeConfig!.limits.maxIterations} iterations, ${challengeConfig!.limits.maxTimeSeconds}s max`));
+      configLines.push(`  ${colors.gray('Limits')}      ${colors.yellow(`${challengeConfig!.limits.maxIterations} iterations, ${challengeConfig!.limits.maxTimeSeconds}s max`)}`);
     }
+    printBox(configLines.join('\n'));
     console.log();
 
     // Start benchmark
@@ -303,8 +306,11 @@ export const runCommand = new Command('run')
 
       // Save results
       const { jsonPath } = saveRunResult(result, getResultsDir());
-      console.log(colors.gray(`\nRun ID: ${result.id}`));
-      console.log(colors.gray(`Results saved to: ${jsonPath}`));
+      console.log();
+      printBox([
+        `  ${colors.gray('Run ID')}   ${colors.yellow(result.id)}`,
+        `  ${colors.gray('Saved')}    ${colors.gray(jsonPath)}`,
+      ].join('\n'));
 
       // Print detailed report if requested
       if (options.report) {
@@ -371,7 +377,10 @@ export const runCommand = new Command('run')
         }
       } else {
         // No analysis, just print basic stats
-        console.log(colors.gray(`\nTime: ${result.totalTime.toFixed(1)}s | Steps: ${result.iterations} | Tokens: ${result.tokens.total.toLocaleString()}`));
+        console.log();
+        printBox(
+          `  ${colors.gray('Time')}  ${colors.yellow(result.totalTime.toFixed(1) + 's')}     ${colors.gray('Steps')}  ${colors.yellow(result.iterations.toString())}     ${colors.gray('Tokens')}  ${colors.cyan(result.tokens.total.toLocaleString())}`,
+        );
       }
 
       console.log();

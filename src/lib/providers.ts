@@ -16,7 +16,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'Anthropic',
     baseUrl: null,  // Uses native Anthropic SDK
     envKey: 'ANTHROPIC_API_KEY',
-    models: ['claude-sonnet-4-5-20250929', 'claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'],
+    models: ['claude-opus-4-6-20250522', 'claude-sonnet-4-6-20250514', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
     isOpenAICompatible: false,
   },
   openai: {
@@ -24,7 +24,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     envKey: 'OPENAI_API_KEY',
-    models: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini'],
+    models: ['o3', 'o4-mini', 'gpt-4.1', 'gpt-4o'],
     isOpenAICompatible: true,
   },
   xai: {
@@ -32,7 +32,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'xAI',
     baseUrl: 'https://api.x.ai/v1',
     envKey: 'XAI_API_KEY',
-    models: ['grok-3-latest', 'grok-4-0709', 'grok-2-1212'],
+    models: ['grok-4-0709', 'grok-3-latest', 'grok-3-mini'],
     isOpenAICompatible: true,
   },
   google: {
@@ -40,7 +40,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'Google',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     envKey: 'GOOGLE_API_KEY',
-    models: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
     isOpenAICompatible: true,
   },
   ollama: {
@@ -48,7 +48,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     displayName: 'Ollama',
     baseUrl: 'http://localhost:11434/v1',
     envKey: null,
-    models: ['llama3.2', 'codellama', 'mistral', 'deepseek-coder'],
+    models: ['llama3.3', 'qwen2.5-coder', 'deepseek-r1', 'mistral'],
     isOpenAICompatible: true,
   },
   custom: {
@@ -82,5 +82,61 @@ export function resolveProviderName(name: string): string {
 export function isAnthropicProvider(provider: string): boolean {
   const resolved = resolveProviderName(provider);
   return resolved === 'anthropic';
+}
+
+/**
+ * Fetch available models from a provider's API.
+ * Returns model IDs sorted alphabetically, or falls back to hardcoded list on failure.
+ */
+export async function fetchAvailableModels(
+  provider: string,
+  apiKey?: string | null,
+  baseUrl?: string | null,
+): Promise<{ models: string[]; live: boolean }> {
+  const resolved = resolveProviderName(provider);
+  const preset = PROVIDERS[resolved];
+  if (!preset) return { models: [], live: false };
+
+  const fallback = { models: preset.models, live: false };
+
+  // No key and not ollama → can't call API, return hardcoded
+  if (!apiKey && resolved !== 'ollama') {
+    // Check env var
+    const envKey = preset.envKey ? process.env[preset.envKey] : null;
+    if (!envKey) return fallback;
+    apiKey = envKey;
+  }
+
+  try {
+    if (resolved === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({
+        apiKey: apiKey!,
+        ...(baseUrl && { baseURL: baseUrl }),
+      });
+      const response = await client.models.list({ limit: 100 });
+      const ids = response.data
+        .map((m: any) => m.id as string)
+        .sort();
+      return ids.length > 0 ? { models: ids, live: true } : fallback;
+    } else {
+      // All other providers are OpenAI-compatible
+      const { default: OpenAI } = await import('openai');
+      const effectiveUrl = baseUrl || preset.baseUrl || undefined;
+      const client = new OpenAI({
+        apiKey: apiKey || 'ollama',
+        baseURL: effectiveUrl,
+      });
+      const response = await client.models.list();
+      const ids: string[] = [];
+      for await (const model of response) {
+        ids.push(model.id);
+      }
+      ids.sort();
+      return ids.length > 0 ? { models: ids, live: true } : fallback;
+    }
+  } catch {
+    return fallback;
+  }
 }
 

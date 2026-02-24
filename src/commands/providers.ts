@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { colors, printHeader } from '../lib/display.js';
+import { colors, printHeader, printBox } from '../lib/display.js';
 import { getApiKey, getProviderUrl } from '../lib/config.js';
 
 interface ProviderInfo {
@@ -17,7 +17,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'anthropic',
     description: 'Claude models from Anthropic',
-    models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+    models: ['claude-opus-4-6-20250522', 'claude-sonnet-4-6-20250514', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
     envVar: 'ANTHROPIC_API_KEY',
     configKey: 'anthropic',
     urlConfigurable: false,
@@ -25,7 +25,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'openai',
     description: 'GPT and o1 models from OpenAI',
-    models: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini'],
+    models: ['o3', 'o4-mini', 'gpt-4.1', 'gpt-4o'],
     envVar: 'OPENAI_API_KEY',
     configKey: 'openai',
     urlConfigurable: false,
@@ -33,7 +33,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'xai',
     description: 'Grok models from xAI',
-    models: ['grok-3-latest', 'grok-4-0709', 'grok-2-1212'],
+    models: ['grok-4-0709', 'grok-3-latest', 'grok-3-mini'],
     envVar: 'XAI_API_KEY',
     configKey: 'xai',
     urlConfigurable: false,
@@ -41,7 +41,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'google',
     description: 'Gemini models from Google',
-    models: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
     envVar: 'GOOGLE_API_KEY',
     configKey: 'google',
     urlConfigurable: false,
@@ -49,7 +49,7 @@ const PROVIDERS: ProviderInfo[] = [
   {
     name: 'ollama',
     description: 'Local models via Ollama',
-    models: ['llama3.2', 'codellama', 'mistral', 'mixtral'],
+    models: ['llama3.3', 'qwen2.5-coder', 'deepseek-r1', 'mistral'],
     envVar: '',
     configKey: 'ollama',
     urlConfigurable: true,
@@ -118,13 +118,13 @@ export const providersCommand = new Command('providers')
     }
 
     console.log();
-    console.log(colors.gray('─'.repeat(50)));
-    console.log(colors.gray('  ● = configured   ○ = not configured'));
-    console.log();
-    console.log(colors.white('  Usage:'));
-    console.log(colors.gray('    oasis run -c <challenge> -m <model> -p <provider>'));
-    console.log();
-    console.log(colors.gray('  Any model string is accepted. Use the model ID from your provider.'));
+    printBox([
+      `${colors.gray('●')} = configured   ${colors.gray('○')} = not configured`,
+      '',
+      `${colors.white('Usage:')}  ${colors.cyan('oasis run -c <challenge> -m <model> -p <provider>')}`,
+      '',
+      colors.gray('Any model string is accepted. Use the model ID from your provider.'),
+    ].join('\n'));
     console.log();
   });
 

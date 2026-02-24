@@ -1,14 +1,14 @@
 import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import { resolve as pathResolve } from 'path';
-import { colors, status, formatDifficulty, formatCategory, printScoreSummary } from '../lib/display.js';
+import { colors, status, formatDifficulty, formatCategory, printScoreSummary, printBox } from '../lib/display.js';
 import { calculateKSM, calculateEfficacy } from '../lib/scoring.js';
 import {
   getApiKey, setApiKey, getConfigValue,
   normalizeProvider, getEffectiveProviderUrl,
   getChallengesDir, getResultsDir,
 } from '../lib/config.js';
-import { PROVIDERS } from '../lib/providers.js';
+import { PROVIDERS, fetchAvailableModels } from '../lib/providers.js';
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { ensureDocker, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
@@ -193,19 +193,32 @@ export async function runBenchmarkFlow(): Promise<void> {
       // ── Step 3: Select or input model ─────────────────────────────────
       case Step.MODEL: {
         const defaultModel = getConfigValue('defaultModel');
-        const knownModels = preset?.models || [];
 
-        if (knownModels.length > 0) {
+        // Fetch live models from the provider API
+        const fetchKey = getApiKey(provider) || getApiKey(providerName);
+        const fetchUrl = getEffectiveProviderUrl(provider) || undefined;
+
+        const spinnerModels = ora({ text: `Fetching models from ${providerName}...`, prefixText: status.info }).start();
+        const { models: availableModels, live } = await fetchAvailableModels(provider, fetchKey, fetchUrl);
+        if (live) {
+          spinnerModels.succeed(`Found ${availableModels.length} models from ${providerName}`);
+        } else if (availableModels.length > 0) {
+          spinnerModels.info(`Showing example models (configure API key for live list)`);
+        } else {
+          spinnerModels.info(`No model list available — enter model ID manually`);
+        }
+
+        if (availableModels.length > 0) {
           const modelChoices = [
-            ...knownModels.map(m => ({ name: m, value: m })),
-            { name: 'Custom model ID...', value: '__custom__' },
+            ...availableModels.map(m => ({ name: m, value: m })),
+            { name: colors.gray('Custom model ID...'), value: '__custom__' },
             { name: colors.gray('← Back'), value: '__back__' },
           ];
 
           const selected = await select({
             message: 'Select model',
             choices: modelChoices,
-            default: defaultModel && knownModels.includes(defaultModel) ? defaultModel : undefined,
+            default: defaultModel && availableModels.includes(defaultModel) ? defaultModel : undefined,
           });
 
           if (selected === '__back__') { step = Step.PROVIDER; break; }
@@ -219,7 +232,7 @@ export async function runBenchmarkFlow(): Promise<void> {
             model = selected;
           }
         } else {
-          // No known models — show a gate select so the user can go back
+          // No models available — show a gate select so the user can go back
           const action = await select({
             message: 'Select model',
             choices: [
@@ -359,6 +372,7 @@ export async function runBenchmarkFlow(): Promise<void> {
 
   const isLocalMode = source === 'local';
   const requiresApiKey = provider !== 'ollama';
+
 
   // 7. Pre-flight: validate API key
   const spinnerPreflight = ora({
@@ -503,8 +517,11 @@ export async function runBenchmarkFlow(): Promise<void> {
 
     // 10. Save results
     const { jsonPath } = saveRunResult(result, getResultsDir());
-    console.log(colors.gray(`\n  Run ID: ${result.id}`));
-    console.log(colors.gray(`  Results saved to: ${jsonPath}`));
+    console.log();
+    printBox([
+      `  ${colors.gray('Run ID')}   ${colors.yellow(result.id)}`,
+      `  ${colors.gray('Saved')}    ${colors.gray(jsonPath)}`,
+    ].join('\n'));
 
     // 11. Run analysis
     if (runAnalysis) {
@@ -558,7 +575,10 @@ export async function runBenchmarkFlow(): Promise<void> {
         }
       }
     } else {
-      console.log(colors.gray(`\n  Time: ${result.totalTime.toFixed(1)}s | Steps: ${result.iterations} | Tokens: ${result.tokens.total.toLocaleString()}`));
+      console.log();
+      printBox(
+        `  ${colors.gray('Time')}  ${colors.yellow(result.totalTime.toFixed(1) + 's')}     ${colors.gray('Steps')}  ${colors.yellow(result.iterations.toString())}     ${colors.gray('Tokens')}  ${colors.cyan(result.tokens.total.toLocaleString())}`,
+      );
     }
 
     console.log();

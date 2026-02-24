@@ -135,7 +135,7 @@ describe('resolveDefaultAnalyzerModel', () => {
 
   it('returns preset default when providers differ', () => {
     const result = makeRunResult('ollama', 'qwen3:30b');
-    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('gpt-4o');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
   });
 
   it('returns DEFAULT_ANALYZER_MODEL for custom with different benchmark provider', () => {
