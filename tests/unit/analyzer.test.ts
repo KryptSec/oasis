@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateKSM, fallbackOverallScore } from '../../src/lib/scoring.js';
+import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL } from '../../src/lib/analyzer.js';
 
 // =============================================================================
 // fallbackOverallScore
@@ -78,6 +79,40 @@ describe('fallbackOverallScore → calculateKSM pipeline', () => {
 // =============================================================================
 // calculateKSM additional edge cases
 // =============================================================================
+
+// =============================================================================
+// resolveDefaultAnalyzerModel — Ollama/custom benchmark-model fallback
+// =============================================================================
+
+describe('resolveDefaultAnalyzerModel', () => {
+  it('returns DEFAULT_ANALYZER_MODEL for anthropic provider', () => {
+    expect(resolveDefaultAnalyzerModel('anthropic')).toBe(DEFAULT_ANALYZER_MODEL);
+  });
+
+  it('returns DEFAULT_ANALYZER_MODEL for anthropic even with benchmarkModel', () => {
+    expect(resolveDefaultAnalyzerModel('anthropic', 'qwen3:4b')).toBe(DEFAULT_ANALYZER_MODEL);
+  });
+
+  it('returns benchmarkModel for ollama when provided', () => {
+    expect(resolveDefaultAnalyzerModel('ollama', 'qwen3:4b')).toBe('qwen3:4b');
+  });
+
+  it('returns benchmarkModel for custom provider when provided', () => {
+    expect(resolveDefaultAnalyzerModel('custom', 'my-local-model')).toBe('my-local-model');
+  });
+
+  it('falls back to preset models[0] for ollama without benchmarkModel', () => {
+    // Without a benchmarkModel, ollama falls back to the preset list
+    const result = resolveDefaultAnalyzerModel('ollama');
+    expect(result).toBe('llama3.2'); // first model in PROVIDERS.ollama.models
+  });
+
+  it('returns preset models[0] for cloud providers regardless of benchmarkModel', () => {
+    // Cloud providers (openai, xai, google) ignore benchmarkModel
+    const result = resolveDefaultAnalyzerModel('openai', 'some-model');
+    expect(result).not.toBe('some-model');
+  });
+});
 
 describe('calculateKSM edge cases', () => {
   it('efficacy=1 uses partial multiplier', () => {

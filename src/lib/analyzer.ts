@@ -414,8 +414,13 @@ export interface AnalyzeOptions {
   challengeConfig?: ChallengeConfig;
 }
 
-function resolveDefaultAnalyzerModel(provider: string): string {
+export function resolveDefaultAnalyzerModel(provider: string, benchmarkModel?: string): string {
   if (isAnthropicProvider(provider)) return DEFAULT_ANALYZER_MODEL;
+  // For local providers (ollama, custom), prefer the benchmark model
+  // since we can't know what the user has installed
+  if (benchmarkModel && (provider === 'ollama' || provider === 'custom')) {
+    return benchmarkModel;
+  }
   const preset = resolveProvider(provider);
   return preset?.models[0] || DEFAULT_ANALYZER_MODEL;
 }
@@ -488,7 +493,7 @@ export async function analyzeRun(
   }
 
   // Resolve model — default per provider
-  const analyzerModel = options.analyzerModel || resolveDefaultAnalyzerModel(provider);
+  const analyzerModel = options.analyzerModel || resolveDefaultAnalyzerModel(provider, result.modelVersion);
 
   // Resolve base URL for OpenAI-compatible providers
   const baseUrl = options.baseUrl || (!useAnthropic

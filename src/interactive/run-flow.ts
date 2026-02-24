@@ -1,4 +1,4 @@
-import { select, input, password, confirm } from '@inquirer/prompts';
+import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { colors, status, formatDifficulty, formatCategory, printScoreSummary } from '../lib/display.js';
@@ -11,210 +11,351 @@ import {
 import { PROVIDERS } from '../lib/providers.js';
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
-import { ensureDocker, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
-import { printColorReport, printAnalysisSummary } from '../lib/report.js';
+import { ensureDocker, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
+import { printAnalysisSummary } from '../lib/report.js';
 import { QuotaExceededError } from '../lib/retry.js';
 import { pullAndStartContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
 import { buildContainerSpec } from '../lib/registry.js';
 import { loadLocalChallenges, loadRegistryChallenges } from './helpers.js';
 import type { ContainerSpec } from '../lib/docker.js';
 import type { RegistryChallengeChoice } from './helpers.js';
-import type { RegistryEntry } from '../lib/registry.js';
 import type { ChallengeConfig, RunnerConfig } from '../lib/types.js';
 
-export async function runBenchmarkFlow(): Promise<void> {
-  // 1. Select challenge source
-  const source = await select({
-    message: 'Challenge source',
-    choices: [
-      { name: 'Online challenges (registry)', value: 'registry' as const },
-      { name: 'Local directory', value: 'local' as const },
-    ],
-  });
+const enum Step {
+  SOURCE     = 0,
+  CHALLENGE  = 1,
+  PROVIDER   = 2,
+  MODEL      = 3,
+  CREDENTIALS = 4,
+  ANALYSIS   = 5,
+  CONFIRM    = 6,
+}
 
-  let challengeConfig: ChallengeConfig;
+export async function runBenchmarkFlow(): Promise<void> {
+  let step: Step = Step.SOURCE;
+
+  // State accumulated across steps
+  let source: 'registry' | 'local' = 'registry';
+  let challengeConfig!: ChallengeConfig;
   let containerSpec: ContainerSpec | null = null;
   let challengeDir: string | undefined;
-  let registryEntry: RegistryEntry | null = null;
+  let provider = '';
+  let providerName = '';
+  let preset: (typeof PROVIDERS)[string] | undefined;
+  let model = '';
+  let resolvedApiKey: string | undefined;
+  let resolvedApiUrl: string | undefined;
+  let runAnalysis = true;
+
+  // Cached challenge lists (avoid re-fetching on back navigation)
+  let cachedLocalChallenges: ChallengeConfig[] | null = null;
+  let cachedRegistryChoices: RegistryChallengeChoice[] | null = null;
+  let cachedSource: 'registry' | 'local' | null = null;
+
+  while (step <= Step.CONFIRM) {
+    switch (step) {
+      // ── Step 0: Challenge source ──────────────────────────────────────
+      case Step.SOURCE: {
+        const selected = await select({
+          message: 'Challenge source',
+          choices: [
+            { name: 'Online challenges (registry)', value: 'registry' as const },
+            { name: 'Local directory', value: 'local' as const },
+            { name: colors.gray('← Back'), value: '__back__' as const },
+          ],
+        });
+
+        if (selected === '__back__') return;
+
+        source = selected;
+        // Invalidate challenge cache when source changes
+        if (cachedSource !== source) {
+          cachedLocalChallenges = null;
+          cachedRegistryChoices = null;
+          cachedSource = source;
+        }
+        step = Step.CHALLENGE;
+        break;
+      }
+
+      // ── Step 1: Select challenge ──────────────────────────────────────
+      case Step.CHALLENGE: {
+        const isLocal = source === 'local';
+
+        if (isLocal) {
+          if (!cachedLocalChallenges) {
+            cachedLocalChallenges = loadLocalChallenges();
+          }
+          const challenges = cachedLocalChallenges;
+
+          if (challenges.length === 0) {
+            console.log(colors.yellow(`\n  ${status.warning} No challenges found.`));
+            console.log(colors.gray(`  Challenge directory: ${getChallengesDir()}`));
+            console.log(colors.gray(`  Download challenges or set the path with: oasis config set challenges-dir <path>\n`));
+            step = Step.SOURCE;
+            break;
+          }
+
+          const selected = await select<ChallengeConfig | '__back__'>({
+            message: 'Select challenge',
+            choices: [
+              ...challenges.map(c => ({
+                name: `${c.name} ${formatDifficulty(`[${c.difficulty}]`)} ${formatCategory(c.category)} — ${colors.gray(c.description.slice(0, 60))}`,
+                value: c as ChallengeConfig,
+              })),
+              { name: colors.gray('← Back'), value: '__back__' as const },
+            ],
+          });
+
+          if (selected === '__back__') { step = Step.SOURCE; break; }
+
+          challengeConfig = selected;
+          challengeDir = pathResolve(getChallengesDir(), challengeConfig.id);
+          containerSpec = null;
+        } else {
+          if (!cachedRegistryChoices) {
+            const spinnerFetch = ora({
+              text: 'Fetching challenges from registry...',
+              prefixText: status.info,
+            }).start();
+
+            try {
+              cachedRegistryChoices = await loadRegistryChallenges();
+              spinnerFetch.succeed(`Found ${cachedRegistryChoices.length} challenges`);
+            } catch (err) {
+              spinnerFetch.fail('Failed to fetch challenge registry');
+              console.error(colors.red(`  ${err instanceof Error ? err.message : 'Unknown error'}`));
+              console.log(colors.gray(`\n  Returning to source selection.\n`));
+              step = Step.SOURCE;
+              break;
+            }
+          }
+
+          const registryChoices = cachedRegistryChoices;
+
+          if (registryChoices.length === 0) {
+            console.log(colors.yellow(`\n  ${status.warning} No challenges found in registry.\n`));
+            step = Step.SOURCE;
+            break;
+          }
+
+          const selected = await select<RegistryChallengeChoice | '__back__'>({
+            message: 'Select challenge',
+            choices: [
+              ...registryChoices.map(c => ({
+                name: `${c.config.name} ${formatDifficulty(`[${c.config.difficulty}]`)} ${formatCategory(c.config.category)} — ${colors.gray(c.config.description.slice(0, 60))}`,
+                value: c as RegistryChallengeChoice,
+              })),
+              { name: colors.gray('← Back'), value: '__back__' as const },
+            ],
+          });
+
+          if (selected === '__back__') { step = Step.SOURCE; break; }
+
+          challengeConfig = selected.config;
+          containerSpec = buildContainerSpec(selected.entry);
+          challengeDir = undefined;
+        }
+
+        step = Step.PROVIDER;
+        break;
+      }
+
+      // ── Step 2: Select provider ───────────────────────────────────────
+      case Step.PROVIDER: {
+        const providerChoices = Object.entries(PROVIDERS).map(([name, p]) => {
+          const hasKey = name === 'ollama' || !!getApiKey(name);
+          const dot = hasKey ? colors.green('●') : colors.gray('○');
+          return { name: `${dot} ${p.displayName}`, value: name };
+        });
+
+        const selected = await select({
+          message: 'Select provider',
+          choices: [
+            ...providerChoices,
+            { name: colors.gray('← Back'), value: '__back__' },
+          ],
+        });
+
+        if (selected === '__back__') { step = Step.CHALLENGE; break; }
+
+        providerName = selected;
+        provider = normalizeProvider(providerName);
+        preset = PROVIDERS[provider] || PROVIDERS[providerName];
+        step = Step.MODEL;
+        break;
+      }
+
+      // ── Step 3: Select or input model ─────────────────────────────────
+      case Step.MODEL: {
+        const defaultModel = getConfigValue('defaultModel');
+        const knownModels = preset?.models || [];
+
+        if (knownModels.length > 0) {
+          const modelChoices = [
+            ...knownModels.map(m => ({ name: m, value: m })),
+            { name: 'Custom model ID...', value: '__custom__' },
+            { name: colors.gray('← Back'), value: '__back__' },
+          ];
+
+          const selected = await select({
+            message: 'Select model',
+            choices: modelChoices,
+            default: defaultModel && knownModels.includes(defaultModel) ? defaultModel : undefined,
+          });
+
+          if (selected === '__back__') { step = Step.PROVIDER; break; }
+
+          if (selected === '__custom__') {
+            model = await input({
+              message: 'Enter model ID:',
+              default: defaultModel || '',
+            });
+          } else {
+            model = selected;
+          }
+        } else {
+          // No known models — show a gate select so the user can go back
+          const action = await select({
+            message: 'Select model',
+            choices: [
+              { name: 'Enter model ID...', value: '__input__' },
+              { name: colors.gray('← Back'), value: '__back__' },
+            ],
+          });
+
+          if (action === '__back__') { step = Step.PROVIDER; break; }
+
+          model = await input({
+            message: 'Enter model ID:',
+            default: defaultModel || '',
+          });
+        }
+
+        if (!model || model.trim().length === 0) {
+          console.log(colors.yellow(`\n  ${status.warning} No model specified. Try again.\n`));
+          break; // re-prompt MODEL step
+        }
+        model = model.trim();
+
+        step = Step.CREDENTIALS;
+        break;
+      }
+
+      // ── Step 4: Resolve API key & URL (conditional) ───────────────────
+      case Step.CREDENTIALS: {
+        const requiresApiKey = provider !== 'ollama';
+        resolvedApiKey = getApiKey(provider);
+
+        if (requiresApiKey && !resolvedApiKey) {
+          console.log(colors.yellow(`\n  ${status.warning} No API key configured for ${provider}.`));
+          const key = await password({
+            message: `Enter API key for ${provider} (leave empty to go back):`,
+            mask: '*',
+          });
+
+          if (!key || key.trim().length === 0) {
+            step = Step.MODEL;
+            break;
+          }
+
+          resolvedApiKey = key.trim();
+
+          const saveAction = await select({
+            message: 'Save this key for future use?',
+            choices: [
+              { name: 'Yes', value: 'yes' },
+              { name: 'No', value: 'no' },
+            ],
+          });
+
+          if (saveAction === 'yes') {
+            setApiKey(provider, resolvedApiKey);
+            console.log(colors.green(`  ${status.success} Key saved.`));
+          }
+        }
+
+        // Resolve API URL
+        resolvedApiUrl = getEffectiveProviderUrl(provider);
+
+        if (provider === 'custom' && !resolvedApiUrl) {
+          const url = await input({
+            message: 'Enter API endpoint URL (leave empty to go back):',
+          });
+          if (!url || url.trim().length === 0) {
+            step = Step.MODEL;
+            break;
+          }
+          resolvedApiUrl = url.trim();
+        }
+
+        step = Step.ANALYSIS;
+        break;
+      }
+
+      // ── Step 5: Analysis toggle ───────────────────────────────────────
+      case Step.ANALYSIS: {
+        const selected = await select({
+          message: 'Run analysis after benchmark?',
+          choices: [
+            { name: 'Yes', value: 'yes' },
+            { name: 'No', value: 'no' },
+            { name: colors.gray('← Back'), value: '__back__' },
+          ],
+        });
+
+        if (selected === '__back__') {
+          // Skip credentials, go back to model
+          step = Step.MODEL;
+          break;
+        }
+
+        runAnalysis = selected === 'yes';
+        step = Step.CONFIRM;
+        break;
+      }
+
+      // ── Step 6: Summary + confirm ─────────────────────────────────────
+      case Step.CONFIRM: {
+        const isLocalMode = source === 'local';
+
+        console.log();
+        console.log(colors.white.bold('  Benchmark Summary'));
+        console.log(colors.gray('  ' + '─'.repeat(40)));
+        console.log(`  ${colors.gray('Challenge:')}  ${colors.white(challengeConfig.name)} ${formatDifficulty(`[${challengeConfig.difficulty}]`)}`);
+        console.log(`  ${colors.gray('Provider:')}   ${colors.white(provider)} (${model})`);
+        console.log(`  ${colors.gray('Mode:')}       ${isLocalMode ? 'Local' : 'Registry'}`);
+        console.log(`  ${colors.gray('Analysis:')}   ${runAnalysis ? colors.green('yes') : colors.gray('no')}`);
+        if (challengeConfig.limits) {
+          console.log(`  ${colors.gray('Limits:')}     ${challengeConfig.limits.maxIterations} iterations, ${challengeConfig.limits.maxTimeSeconds}s max`);
+        }
+        console.log();
+
+        const selected = await select({
+          message: 'Start benchmark?',
+          choices: [
+            { name: 'Yes', value: 'yes' },
+            { name: 'No', value: 'no' },
+            { name: colors.gray('← Back'), value: '__back__' },
+          ],
+        });
+
+        if (selected === '__back__') { step = Step.ANALYSIS; break; }
+        if (selected === 'no') return;
+
+        // Confirmed — break out of the wizard loop
+        step = (Step.CONFIRM + 1) as Step;
+        break;
+      }
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Execution phase (unchanged from here onward)
+  // ════════════════════════════════════════════════════════════════════════
+
   const isLocalMode = source === 'local';
-
-  if (isLocalMode) {
-    // Load local challenges
-    const challenges = loadLocalChallenges();
-    if (challenges.length === 0) {
-      console.log(colors.yellow(`\n  ${status.warning} No challenges found.`));
-      console.log(colors.gray(`  Challenge directory: ${getChallengesDir()}`));
-      console.log(colors.gray(`  Download challenges or set the path with: oasis config set challenges-dir <path>\n`));
-      return;
-    }
-
-    challengeConfig = await select({
-      message: 'Select challenge',
-      choices: challenges.map(c => ({
-        name: `${c.name} ${formatDifficulty(`[${c.difficulty}]`)} ${formatCategory(c.category)} — ${colors.gray(c.description.slice(0, 60))}`,
-        value: c,
-      })),
-    });
-
-    challengeDir = pathResolve(getChallengesDir(), challengeConfig.id);
-  } else {
-    // Load registry challenges
-    const spinnerFetch = ora({
-      text: 'Fetching challenges from registry...',
-      prefixText: status.info,
-    }).start();
-
-    let registryChoices: RegistryChallengeChoice[];
-    try {
-      registryChoices = await loadRegistryChallenges();
-      spinnerFetch.succeed(`Found ${registryChoices.length} challenges`);
-    } catch (err) {
-      spinnerFetch.fail('Failed to fetch challenge registry');
-      console.error(colors.red(`  ${err instanceof Error ? err.message : 'Unknown error'}`));
-      console.log(colors.gray(`\n  Select "Local directory" to use local challenges instead.\n`));
-      return;
-    }
-
-    if (registryChoices.length === 0) {
-      console.log(colors.yellow(`\n  ${status.warning} No challenges found in registry.\n`));
-      return;
-    }
-
-    const choice = await select({
-      message: 'Select challenge',
-      choices: registryChoices.map(c => ({
-        name: `${c.config.name} ${formatDifficulty(`[${c.config.difficulty}]`)} ${formatCategory(c.config.category)} — ${colors.gray(c.config.description.slice(0, 60))}`,
-        value: c,
-      })),
-    });
-
-    challengeConfig = choice.config;
-    registryEntry = choice.entry;
-    containerSpec = buildContainerSpec(choice.entry);
-  }
-
-  // 2. Select provider
-  const providerChoices = Object.entries(PROVIDERS).map(([name, preset]) => {
-    const hasKey = name === 'ollama' || !!getApiKey(name);
-    const dot = hasKey ? colors.green('●') : colors.gray('○');
-    return { name: `${dot} ${preset.displayName}`, value: name };
-  });
-
-  const providerName = await select({
-    message: 'Select provider',
-    choices: providerChoices,
-  });
-
-  const provider = normalizeProvider(providerName);
-  const preset = PROVIDERS[provider] || PROVIDERS[providerName];
-
-  // 3. Select or input model
-  let model: string;
-  const defaultModel = getConfigValue('defaultModel');
-  const knownModels = preset?.models || [];
-
-  if (knownModels.length > 0) {
-    const modelChoices = [
-      ...knownModels.map(m => ({ name: m, value: m })),
-      { name: 'Custom model ID...', value: '__custom__' },
-    ];
-
-    const selected = await select({
-      message: 'Select model',
-      choices: modelChoices,
-      default: defaultModel && knownModels.includes(defaultModel) ? defaultModel : undefined,
-    });
-
-    if (selected === '__custom__') {
-      model = await input({
-        message: 'Enter model ID:',
-        default: defaultModel || '',
-      });
-    } else {
-      model = selected;
-    }
-  } else {
-    model = await input({
-      message: 'Enter model ID:',
-      default: defaultModel || '',
-    });
-  }
-
-  if (!model || model.trim().length === 0) {
-    console.log(colors.yellow(`\n  ${status.warning} No model specified.\n`));
-    return;
-  }
-  model = model.trim();
-
-  // 4. Resolve API key
-  let resolvedApiKey = getApiKey(provider);
   const requiresApiKey = provider !== 'ollama';
-
-  if (requiresApiKey && !resolvedApiKey) {
-    console.log(colors.yellow(`\n  ${status.warning} No API key configured for ${provider}.`));
-    const key = await password({
-      message: `Enter API key for ${provider}:`,
-      mask: '*',
-    });
-
-    if (!key || key.trim().length === 0) {
-      console.log(colors.yellow(`  ${status.warning} API key required. Returning to menu.\n`));
-      return;
-    }
-
-    resolvedApiKey = key.trim();
-
-    const shouldSave = await confirm({
-      message: 'Save this key for future use?',
-      default: true,
-    });
-
-    if (shouldSave) {
-      setApiKey(provider, resolvedApiKey);
-      console.log(colors.green(`  ${status.success} Key saved.`));
-    }
-  }
-
-  // Resolve API URL
-  let resolvedApiUrl = getEffectiveProviderUrl(provider);
-
-  // For custom provider, prompt for URL if none configured
-  if (provider === 'custom' && !resolvedApiUrl) {
-    resolvedApiUrl = await input({
-      message: 'Enter API endpoint URL:',
-    });
-    if (!resolvedApiUrl || resolvedApiUrl.trim().length === 0) {
-      console.log(colors.yellow(`\n  ${status.warning} Custom provider requires an API URL.\n`));
-      return;
-    }
-    resolvedApiUrl = resolvedApiUrl.trim();
-  }
-
-  // 5. Analysis toggle
-  const runAnalysis = await confirm({
-    message: 'Run analysis after benchmark?',
-    default: true,
-  });
-
-  // 6. Summary + confirm
-  console.log();
-  console.log(colors.white.bold('  Benchmark Summary'));
-  console.log(colors.gray('  ' + '─'.repeat(40)));
-  console.log(`  ${colors.gray('Challenge:')}  ${colors.white(challengeConfig.name)} ${formatDifficulty(`[${challengeConfig.difficulty}]`)}`);
-  console.log(`  ${colors.gray('Provider:')}   ${colors.white(provider)} (${model})`);
-  console.log(`  ${colors.gray('Mode:')}       ${isLocalMode ? 'Local' : 'Registry'}`);
-  console.log(`  ${colors.gray('Analysis:')}   ${runAnalysis ? colors.green('yes') : colors.gray('no')}`);
-  if (challengeConfig.limits) {
-    console.log(`  ${colors.gray('Limits:')}     ${challengeConfig.limits.maxIterations} iterations, ${challengeConfig.limits.maxTimeSeconds}s max`);
-  }
-  console.log();
-
-  const proceed = await confirm({
-    message: 'Start benchmark?',
-    default: true,
-  });
-
-  if (!proceed) return;
 
   // 7. Pre-flight: validate API key
   const spinnerPreflight = ora({
