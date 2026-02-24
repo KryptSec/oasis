@@ -15,6 +15,126 @@ import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './re
 const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
 
 // =============================================================================
+// Thinking-Tag Stripping & Fallback Command Extraction
+// =============================================================================
+
+/**
+ * Strip `<think>...</think>` and `<thinking>...</thinking>` blocks from text.
+ * Uses depth-counting to correctly handle nested tags. Case-insensitive.
+ */
+export function stripThinkingTags(text: string): string {
+  let result = text;
+  for (const tag of ['think', 'thinking']) {
+    result = stripNestedTag(result, tag);
+  }
+  return result.trim();
+}
+
+function stripNestedTag(text: string, tag: string): string {
+  const openStr = `<${tag}>`;
+  const closeStr = `</${tag}>`;
+  const openLen = openStr.length;
+  const closeLen = closeStr.length;
+
+  let result = '';
+  let depth = 0;
+  let i = 0;
+
+  while (i < text.length) {
+    if (text.substring(i, i + openLen).toLowerCase() === openStr) {
+      depth++;
+      i += openLen;
+    } else if (text.substring(i, i + closeLen).toLowerCase() === closeStr) {
+      if (depth > 0) depth--;
+      i += closeLen;
+    } else {
+      if (depth === 0) result += text[i];
+      i++;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Extract balanced `{...}` JSON blocks from text.
+ * Returns an array of raw JSON strings.
+ */
+export function findJsonBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  let depth = 0;
+  let start = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        blocks.push(text.substring(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return blocks;
+}
+
+/**
+ * Parse a tool-call JSON object and return the command string, or null.
+ * Handles both `arguments: { command }` and `arguments: "{\"command\":\"...\"}"`.
+ */
+function tryParseToolCallJson(jsonStr: string): string | null {
+  try {
+    const obj = JSON.parse(jsonStr);
+    // Only accept objects that look like a run_command tool call
+    if (obj.name !== 'run_command') return null;
+
+    const args = obj.arguments ?? obj.parameters;
+    if (!args) return null;
+
+    // If arguments is a string, parse it
+    const parsed = typeof args === 'string' ? JSON.parse(args) : args;
+    if (parsed && typeof parsed.command === 'string') {
+      return parsed.command;
+    }
+  } catch {
+    // Not valid JSON
+  }
+  return null;
+}
+
+/**
+ * Fallback command extractor for models that emit tool calls as text
+ * (e.g. Qwen3 with `<think>` blocks followed by raw JSON).
+ *
+ * Tries, in order:
+ * 1. `<tool_call>JSON</tool_call>` tags
+ * 2. Balanced-brace JSON blocks containing `"run_command"`
+ */
+export function extractCommandFromText(text: string): string | null {
+  const cleaned = stripThinkingTags(text);
+  if (!cleaned) return null;
+
+  // 1. <tool_call>...</tool_call> pattern
+  const toolCallTagMatch = cleaned.match(/<tool_call>([\s\S]*?)<\/tool_call>/i);
+  if (toolCallTagMatch) {
+    const cmd = tryParseToolCallJson(toolCallTagMatch[1].trim());
+    if (cmd) return cmd;
+  }
+
+  // 2. Raw JSON containing "run_command" — scan balanced blocks
+  if (cleaned.includes('run_command')) {
+    for (const block of findJsonBlocks(cleaned)) {
+      const cmd = tryParseToolCallJson(block);
+      if (cmd) return cmd;
+    }
+  }
+
+  return null;
+}
+
+// =============================================================================
 // Command Execution
 // =============================================================================
 
@@ -62,6 +182,46 @@ function executeCommand(command: string, containerName: string, verbose: boolean
     }
     return errorOutput;
   }
+}
+
+/**
+ * Execute a command in Docker and record the result as a Step.
+ * Shared by both the structured tool_calls path and the fallback text-extraction path.
+ */
+function executeAndRecordStep(opts: {
+  command: string;
+  containerName: string;
+  verbose: boolean;
+  iteration: number;
+  lastStepTime: Date;
+  currentReasoning: string;
+  stepInputTokens: number;
+  stepOutputTokens: number;
+}): { step: Step; output: string; endTime: Date; flag: string | null } {
+  const startTime = new Date();
+  const output = executeCommand(opts.command, opts.containerName, opts.verbose);
+  const endTime = new Date();
+  const tool = opts.command.trim().split(/\s+/)[0] || 'unknown';
+  const success = wasSuccessful(opts.command, output);
+
+  const step: Step = {
+    iteration: opts.iteration,
+    timestamp: startTime,
+    duration: endTime.getTime() - opts.lastStepTime.getTime(),
+    reasoning: opts.currentReasoning,
+    type: 'tool_call',
+    command: opts.command,
+    output: output.substring(0, 10000),
+    technique: null,
+    methodology: undefined,
+    tool,
+    success,
+    inputTokens: opts.stepInputTokens,
+    outputTokens: opts.stepOutputTokens,
+  };
+
+  const flagMatch = output.match(FLAG_PATTERN);
+  return { step, output, endTime, flag: flagMatch?.[0] ?? null };
 }
 
 // =============================================================================
@@ -444,10 +604,12 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
 
       const reasoningText = (assistantMessage as any).reasoning_content || assistantMessage.content || '';
       if (reasoningText) {
-        if (config.verbose && assistantMessage.content) {
-          console.log(chalk.white(`\n${config.modelId}: ${assistantMessage.content}`));
+        // Strip thinking tags for display & reasoning, keep original content for flag matching
+        const displayText = stripThinkingTags(assistantMessage.content || '');
+        if (config.verbose && displayText) {
+          console.log(chalk.white(`\n${config.modelId}: ${displayText}`));
         }
-        currentReasoning = reasoningText;
+        currentReasoning = stripThinkingTags(reasoningText);
 
         if (assistantMessage.content) {
           const flagMatch = assistantMessage.content.match(FLAG_PATTERN);
@@ -470,49 +632,58 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
       if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
         for (const toolCall of assistantMessage.tool_calls) {
           const args = JSON.parse(toolCall.function.arguments);
-          const command = args.command;
-
-          const commandStartTime = new Date();
-          const output = executeCommand(command, containerName, config.verbose || false);
-          const commandEndTime = new Date();
-
-          const tool = command.trim().split(/\s+/)[0] || 'unknown';
-          const success = wasSuccessful(command, output);
-
-          steps.push({
+          const result = executeAndRecordStep({
+            command: args.command,
+            containerName,
+            verbose: config.verbose || false,
             iteration: iterations,
-            timestamp: commandStartTime,
-            duration: commandEndTime.getTime() - lastStepTime.getTime(),
-            reasoning: currentReasoning,
-            type: 'tool_call',
-            command,
-            output: output.substring(0, 10000),
-            technique: null,
-            methodology: undefined,
-            tool,
-            success,
-            inputTokens: stepInputTokens,
-            outputTokens: stepOutputTokens,
+            lastStepTime,
+            currentReasoning,
+            stepInputTokens,
+            stepOutputTokens,
           });
 
-          lastStepTime = commandEndTime;
-
-          const flagMatch = output.match(FLAG_PATTERN);
-          if (flagMatch) {
-            foundFlag = flagMatch[0];
-          }
+          steps.push(result.step);
+          lastStepTime = result.endTime;
+          if (result.flag) foundFlag = result.flag;
 
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: output.substring(0, 50000),
+            content: result.output.substring(0, 50000),
           });
         }
-      } else if (choice.finish_reason === 'stop' && !foundFlag) {
-        if (config.verbose) {
-          console.log(chalk.yellow('\nAgent finished without finding flag.'));
+      } else {
+        // Fallback: model may have emitted a tool call as raw text (e.g. Qwen3 with <think> tags)
+        const fallbackCommand = extractCommandFromText(assistantMessage.content || '');
+        if (fallbackCommand) {
+          if (config.verbose) {
+            console.log(chalk.cyan(`\n[fallback] Extracted command from text: ${fallbackCommand}`));
+          }
+
+          const result = executeAndRecordStep({
+            command: fallbackCommand,
+            containerName,
+            verbose: config.verbose || false,
+            iteration: iterations,
+            lastStepTime,
+            currentReasoning,
+            stepInputTokens,
+            stepOutputTokens,
+          });
+
+          steps.push(result.step);
+          lastStepTime = result.endTime;
+          if (result.flag) foundFlag = result.flag;
+
+          // Feed output back as a user message (no tool_call_id available)
+          messages.push({ role: 'user', content: `Command output:\n${result.output.substring(0, 50000)}` });
+        } else if (choice.finish_reason === 'stop' && !foundFlag) {
+          if (config.verbose) {
+            console.log(chalk.yellow('\nAgent finished without finding flag.'));
+          }
+          break;
         }
-        break;
       }
     }
   } catch (error: any) {
