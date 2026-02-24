@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  test-matrix:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -33,3 +33,17 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Completion gate — required by branch protection (matrix jobs expand to
+  # "test-matrix (18)" etc., which don't match the required check name "test").
+  test:
+    needs: [test-matrix]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check matrix results
+        run: |
+          if [ "${{ needs.test-matrix.result }}" != "success" ]; then
+            echo "Matrix jobs failed or were cancelled"
+            exit 1
+          fi
