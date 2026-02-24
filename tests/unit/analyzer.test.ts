@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { calculateKSM, fallbackOverallScore } from '../../src/lib/scoring.js';
+import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL } from '../../src/lib/analyzer.js';
+import type { RunResult } from '../../src/lib/types.js';
+
+function makeRunResult(model: string, modelVersion: string): RunResult {
+  return {
+    id: 'test-run',
+    model,
+    modelVersion,
+    challenge: 'test-challenge',
+    startTime: new Date(),
+    endTime: new Date(),
+    success: false,
+    flag: null,
+    totalTime: 10,
+    iterations: 1,
+    tokens: { input: 0, output: 0, total: 0 },
+    steps: [],
+    techniquesUsed: [],
+    tacticBreakdown: {},
+    methodologies: [],
+    toolsUsed: [],
+    methodologyBreakdown: {},
+  };
+}
 
 // =============================================================================
 // fallbackOverallScore
@@ -78,6 +102,62 @@ describe('fallbackOverallScore → calculateKSM pipeline', () => {
 // =============================================================================
 // calculateKSM additional edge cases
 // =============================================================================
+
+// =============================================================================
+// resolveDefaultAnalyzerModel — provider-aware benchmark-model fallback
+// =============================================================================
+
+describe('resolveDefaultAnalyzerModel', () => {
+  it('returns DEFAULT_ANALYZER_MODEL for anthropic provider', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('anthropic', result)).toBe(DEFAULT_ANALYZER_MODEL);
+  });
+
+  it('returns DEFAULT_ANALYZER_MODEL for claude alias', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('claude', result)).toBe(DEFAULT_ANALYZER_MODEL);
+  });
+
+  it('returns benchmark model when providers match (ollama)', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('ollama', result)).toBe('qwen3:30b');
+  });
+
+  it('returns benchmark model when providers match (openai)', () => {
+    const result = makeRunResult('openai', 'gpt-4o-mini');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('gpt-4o-mini');
+  });
+
+  it('returns benchmark model when providers match (xai)', () => {
+    const result = makeRunResult('xai', 'grok-3-latest');
+    expect(resolveDefaultAnalyzerModel('xai', result)).toBe('grok-3-latest');
+  });
+
+  it('returns preset default when providers differ', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('gpt-4o');
+  });
+
+  it('returns DEFAULT_ANALYZER_MODEL for custom with different benchmark provider', () => {
+    const result = makeRunResult('openai', 'gpt-4o');
+    expect(resolveDefaultAnalyzerModel('custom', result)).toBe(DEFAULT_ANALYZER_MODEL);
+  });
+
+  it('returns benchmark model for custom when benchmark also used custom', () => {
+    const result = makeRunResult('custom', 'my-local-model');
+    expect(resolveDefaultAnalyzerModel('custom', result)).toBe('my-local-model');
+  });
+
+  it('handles provider aliases (grok -> xai)', () => {
+    const result = makeRunResult('xai', 'grok-3-latest');
+    expect(resolveDefaultAnalyzerModel('grok', result)).toBe('grok-3-latest');
+  });
+
+  it('handles provider aliases (gemini -> google)', () => {
+    const result = makeRunResult('google', 'gemini-2.0-flash');
+    expect(resolveDefaultAnalyzerModel('gemini', result)).toBe('gemini-2.0-flash');
+  });
+});
 
 describe('calculateKSM edge cases', () => {
   it('efficacy=1 uses partial multiplier', () => {
