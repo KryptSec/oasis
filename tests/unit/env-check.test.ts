@@ -30,9 +30,11 @@ vi.mock('@anthropic-ai/sdk', () => ({
 
 // Mock OpenAI SDK (dynamic import)
 const mockOpenAIModelsList = vi.fn();
+const mockOpenAIChatCreate = vi.fn();
 vi.mock('openai', () => ({
   default: vi.fn(() => ({
     models: { list: mockOpenAIModelsList },
+    chat: { completions: { create: mockOpenAIChatCreate } },
   })),
 }));
 
@@ -394,6 +396,53 @@ describe('checkApiKey', () => {
   it('ollama: skips validation and returns ok', async () => {
     const result = await checkApiKey('ollama', '');
     expect(result.ok).toBe(true);
+  });
+
+  it('xai: returns ok on successful chat completion', async () => {
+    mockOpenAIChatCreate.mockResolvedValue({ id: 'chatcmpl-123' });
+    const result = await checkApiKey('xai', 'xai-test-key');
+    expect(result.ok).toBe(true);
+  });
+
+  it('xai: returns error on 401', async () => {
+    mockOpenAIChatCreate.mockRejectedValue({ status: 401 });
+    const result = await checkApiKey('xai', 'xai-bad-key');
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes('invalid'))).toBe(true);
+    expect(result.hints.some((h) => h.includes('oasis config set'))).toBe(true);
+  });
+
+  it('xai: treats 400 "Incorrect API key" as invalid key', async () => {
+    mockOpenAIChatCreate.mockRejectedValue({
+      status: 400,
+      message: '400 "Incorrect API key provided: xa***23."',
+    });
+    const result = await checkApiKey('xai', 'xai-bad-key');
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes('invalid'))).toBe(true);
+  });
+
+  it('xai: treats 403 with credits message as valid key', async () => {
+    mockOpenAIChatCreate.mockRejectedValue({
+      status: 403,
+      message: '403 "Your newly created team doesn\'t have any credits or licenses yet."',
+    });
+    const result = await checkApiKey('xai', 'xai-test-key');
+    expect(result.ok).toBe(true);
+    expect(result.hints.some((h) => h.includes('credit'))).toBe(true);
+  });
+
+  it('xai: treats 404 (model not found) as valid key', async () => {
+    mockOpenAIChatCreate.mockRejectedValue({ status: 404 });
+    const result = await checkApiKey('xai', 'xai-test-key');
+    expect(result.ok).toBe(true);
+  });
+
+  it('xai: returns error on network failure', async () => {
+    mockOpenAIChatCreate.mockRejectedValue(new Error('ECONNREFUSED'));
+    const result = await checkApiKey('xai', 'xai-test-key');
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes('Could not validate'))).toBe(true);
   });
 
   it('includes baseUrl in hints when provided and validation fails', async () => {

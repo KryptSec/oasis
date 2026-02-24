@@ -285,8 +285,42 @@ export async function checkApiKey(
     } else if (provider === 'ollama') {
       // No API key needed — skip
       return { ok: true, errors: [], hints: [] };
+    } else if (provider === 'xai') {
+      // xAI's /v1/models endpoint is unreliable with the OpenAI SDK;
+      // validate with a minimal chat completion instead (costs ~1-2 tokens).
+      // xAI error codes: 400 = invalid key, 403 = valid key but no credits,
+      // 401 = unauthorized, 404 = model not found (key accepted).
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey, baseURL: baseUrl || 'https://api.x.ai/v1' });
+      try {
+        await client.chat.completions.create({
+          model: 'grok-3-latest',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }],
+        });
+      } catch (validationError: any) {
+        const errStatus = validationError?.status ?? validationError?.error?.status;
+        const errMsg = (validationError?.message || '').toLowerCase();
+        // 404 = model not found but key was accepted — key is valid
+        if (errStatus === 404) {
+          return { ok: true, errors: [], hints: [] };
+        }
+        // 403 with credits/license message = key is valid but account has no credits
+        if (errStatus === 403 && (errMsg.includes('credit') || errMsg.includes('license'))) {
+          return {
+            ok: true,
+            errors: [],
+            hints: ['xAI account has no credits — billing may be required before running benchmarks'],
+          };
+        }
+        // 400 "Incorrect API key" = invalid key — rethrow as 401 for consistent handling
+        if (errStatus === 400 && errMsg.includes('incorrect api key')) {
+          throw { status: 401, message: validationError.message };
+        }
+        throw validationError;
+      }
     } else {
-      // OpenAI-compatible providers (openai, xai, google, custom)
+      // OpenAI-compatible providers (openai, google, custom)
       const { default: OpenAI } = await import('openai');
       const client = new OpenAI({ apiKey, baseURL: baseUrl });
       await client.models.list();
