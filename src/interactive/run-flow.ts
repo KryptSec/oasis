@@ -182,6 +182,10 @@ export async function runBenchmarkFlow(): Promise<void> {
         providerName = selected;
         provider = normalizeProvider(providerName);
         preset = PROVIDERS[provider] || PROVIDERS[providerName];
+        // Reset downstream state so stale credentials/model don't carry over
+        model = '';
+        resolvedApiKey = undefined;
+        resolvedApiUrl = undefined;
         step = Step.MODEL;
         break;
       }
@@ -233,8 +237,8 @@ export async function runBenchmarkFlow(): Promise<void> {
         }
 
         if (!model || model.trim().length === 0) {
-          console.log(colors.yellow(`\n  ${status.warning} No model specified. Try again.\n`));
-          break; // re-prompt MODEL step
+          step = Step.PROVIDER;
+          break;
         }
         model = model.trim();
 
@@ -305,8 +309,7 @@ export async function runBenchmarkFlow(): Promise<void> {
         });
 
         if (selected === '__back__') {
-          // Skip credentials, go back to model
-          step = Step.MODEL;
+          step = Step.CREDENTIALS;
           break;
         }
 

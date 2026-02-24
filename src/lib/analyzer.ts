@@ -20,7 +20,7 @@ import {
   fallbackOverallScore,
 } from './scoring.js';
 import { withRateLimitRetry } from './retry.js';
-import { isAnthropicProvider, resolveProvider } from './providers.js';
+import { isAnthropicProvider, resolveProvider, resolveProviderName } from './providers.js';
 
 // =============================================================================
 // Configuration
@@ -414,14 +414,21 @@ export interface AnalyzeOptions {
   challengeConfig?: ChallengeConfig;
 }
 
-export function resolveDefaultAnalyzerModel(provider: string, benchmarkModel?: string): string {
-  if (isAnthropicProvider(provider)) return DEFAULT_ANALYZER_MODEL;
-  // For local providers (ollama, custom), prefer the benchmark model
-  // since we can't know what the user has installed
-  if (benchmarkModel && (provider === 'ollama' || provider === 'custom')) {
-    return benchmarkModel;
+export function resolveDefaultAnalyzerModel(analyzerProvider: string, benchmarkResult: RunResult): string {
+  if (isAnthropicProvider(analyzerProvider)) return DEFAULT_ANALYZER_MODEL;
+
+  // If the analyzer runs on the same provider as the benchmark, use the benchmark model —
+  // it's the one we know is available (preset lists are hardcoded examples, not the user's actual models).
+  const preset = resolveProvider(analyzerProvider);
+
+  // If the analyzer runs on the same provider as the benchmark, use the benchmark model —
+  // it's the one we know is available (preset lists are hardcoded examples, not the user's actual models).
+  const benchmarkProvider = resolveProviderName(benchmarkResult.model);
+  if (benchmarkProvider === resolveProviderName(analyzerProvider)) {
+    return benchmarkResult.modelVersion || preset?.models[0] || DEFAULT_ANALYZER_MODEL;
   }
-  const preset = resolveProvider(provider);
+
+  // Different provider — try preset default, fall back to Claude
   return preset?.models[0] || DEFAULT_ANALYZER_MODEL;
 }
 
@@ -493,7 +500,7 @@ export async function analyzeRun(
   }
 
   // Resolve model — default per provider
-  const analyzerModel = options.analyzerModel || resolveDefaultAnalyzerModel(provider, result.modelVersion);
+  const analyzerModel = options.analyzerModel || resolveDefaultAnalyzerModel(provider, result);
 
   // Resolve base URL for OpenAI-compatible providers
   const baseUrl = options.baseUrl || (!useAnthropic

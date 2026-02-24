@@ -1,6 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { calculateKSM, fallbackOverallScore } from '../../src/lib/scoring.js';
 import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL } from '../../src/lib/analyzer.js';
+import type { RunResult } from '../../src/lib/types.js';
+
+function makeRunResult(model: string, modelVersion: string): RunResult {
+  return {
+    id: 'test-run',
+    model,
+    modelVersion,
+    challenge: 'test-challenge',
+    startTime: new Date(),
+    endTime: new Date(),
+    success: false,
+    flag: null,
+    totalTime: 10,
+    iterations: 1,
+    tokens: { input: 0, output: 0, total: 0 },
+    steps: [],
+    techniquesUsed: [],
+    tacticBreakdown: {},
+    methodologies: [],
+    toolsUsed: [],
+    methodologyBreakdown: {},
+  };
+}
 
 // =============================================================================
 // fallbackOverallScore
@@ -81,36 +104,58 @@ describe('fallbackOverallScore → calculateKSM pipeline', () => {
 // =============================================================================
 
 // =============================================================================
-// resolveDefaultAnalyzerModel — Ollama/custom benchmark-model fallback
+// resolveDefaultAnalyzerModel — provider-aware benchmark-model fallback
 // =============================================================================
 
 describe('resolveDefaultAnalyzerModel', () => {
   it('returns DEFAULT_ANALYZER_MODEL for anthropic provider', () => {
-    expect(resolveDefaultAnalyzerModel('anthropic')).toBe(DEFAULT_ANALYZER_MODEL);
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('anthropic', result)).toBe(DEFAULT_ANALYZER_MODEL);
   });
 
-  it('returns DEFAULT_ANALYZER_MODEL for anthropic even with benchmarkModel', () => {
-    expect(resolveDefaultAnalyzerModel('anthropic', 'qwen3:4b')).toBe(DEFAULT_ANALYZER_MODEL);
+  it('returns DEFAULT_ANALYZER_MODEL for claude alias', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('claude', result)).toBe(DEFAULT_ANALYZER_MODEL);
   });
 
-  it('returns benchmarkModel for ollama when provided', () => {
-    expect(resolveDefaultAnalyzerModel('ollama', 'qwen3:4b')).toBe('qwen3:4b');
+  it('returns benchmark model when providers match (ollama)', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('ollama', result)).toBe('qwen3:30b');
   });
 
-  it('returns benchmarkModel for custom provider when provided', () => {
-    expect(resolveDefaultAnalyzerModel('custom', 'my-local-model')).toBe('my-local-model');
+  it('returns benchmark model when providers match (openai)', () => {
+    const result = makeRunResult('openai', 'gpt-4o-mini');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('gpt-4o-mini');
   });
 
-  it('falls back to preset models[0] for ollama without benchmarkModel', () => {
-    // Without a benchmarkModel, ollama falls back to the preset list
-    const result = resolveDefaultAnalyzerModel('ollama');
-    expect(result).toBe('llama3.2'); // first model in PROVIDERS.ollama.models
+  it('returns benchmark model when providers match (xai)', () => {
+    const result = makeRunResult('xai', 'grok-3-latest');
+    expect(resolveDefaultAnalyzerModel('xai', result)).toBe('grok-3-latest');
   });
 
-  it('returns preset models[0] for cloud providers regardless of benchmarkModel', () => {
-    // Cloud providers (openai, xai, google) ignore benchmarkModel
-    const result = resolveDefaultAnalyzerModel('openai', 'some-model');
-    expect(result).not.toBe('some-model');
+  it('returns preset default when providers differ', () => {
+    const result = makeRunResult('ollama', 'qwen3:30b');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('gpt-4o');
+  });
+
+  it('returns DEFAULT_ANALYZER_MODEL for custom with different benchmark provider', () => {
+    const result = makeRunResult('openai', 'gpt-4o');
+    expect(resolveDefaultAnalyzerModel('custom', result)).toBe(DEFAULT_ANALYZER_MODEL);
+  });
+
+  it('returns benchmark model for custom when benchmark also used custom', () => {
+    const result = makeRunResult('custom', 'my-local-model');
+    expect(resolveDefaultAnalyzerModel('custom', result)).toBe('my-local-model');
+  });
+
+  it('handles provider aliases (grok -> xai)', () => {
+    const result = makeRunResult('xai', 'grok-3-latest');
+    expect(resolveDefaultAnalyzerModel('grok', result)).toBe('grok-3-latest');
+  });
+
+  it('handles provider aliases (gemini -> google)', () => {
+    const result = makeRunResult('google', 'gemini-2.0-flash');
+    expect(resolveDefaultAnalyzerModel('gemini', result)).toBe('gemini-2.0-flash');
   });
 });
 
