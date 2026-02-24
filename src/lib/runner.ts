@@ -124,18 +124,12 @@ export function extractCommandFromText(text: string): string | null {
     if (cmd) return cmd;
   }
 
-  // 2. Raw JSON containing "run_command"
+  // 2. Raw JSON containing "run_command" — scan balanced blocks
   if (cleaned.includes('run_command')) {
     for (const block of findJsonBlocks(cleaned)) {
       const cmd = tryParseToolCallJson(block);
       if (cmd) return cmd;
     }
-  }
-
-  // 3. Scan all JSON blocks for anything with a command field
-  for (const block of findJsonBlocks(cleaned)) {
-    const cmd = tryParseToolCallJson(block);
-    if (cmd) return cmd;
   }
 
   return null;
@@ -189,6 +183,46 @@ function executeCommand(command: string, containerName: string, verbose: boolean
     }
     return errorOutput;
   }
+}
+
+/**
+ * Execute a command in Docker and record the result as a Step.
+ * Shared by both the structured tool_calls path and the fallback text-extraction path.
+ */
+function executeAndRecordStep(opts: {
+  command: string;
+  containerName: string;
+  verbose: boolean;
+  iteration: number;
+  lastStepTime: Date;
+  currentReasoning: string;
+  stepInputTokens: number;
+  stepOutputTokens: number;
+}): { step: Step; output: string; endTime: Date; flag: string | null } {
+  const startTime = new Date();
+  const output = executeCommand(opts.command, opts.containerName, opts.verbose);
+  const endTime = new Date();
+  const tool = opts.command.trim().split(/\s+/)[0] || 'unknown';
+  const success = wasSuccessful(opts.command, output);
+
+  const step: Step = {
+    iteration: opts.iteration,
+    timestamp: startTime,
+    duration: endTime.getTime() - opts.lastStepTime.getTime(),
+    reasoning: opts.currentReasoning,
+    type: 'tool_call',
+    command: opts.command,
+    output: output.substring(0, 10000),
+    technique: null,
+    methodology: undefined,
+    tool,
+    success,
+    inputTokens: opts.stepInputTokens,
+    outputTokens: opts.stepOutputTokens,
+  };
+
+  const flagMatch = output.match(FLAG_PATTERN);
+  return { step, output, endTime, flag: flagMatch?.[0] ?? null };
 }
 
 // =============================================================================
@@ -599,42 +633,25 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
       if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
         for (const toolCall of assistantMessage.tool_calls) {
           const args = JSON.parse(toolCall.function.arguments);
-          const command = args.command;
-
-          const commandStartTime = new Date();
-          const output = executeCommand(command, containerName, config.verbose || false);
-          const commandEndTime = new Date();
-
-          const tool = command.trim().split(/\s+/)[0] || 'unknown';
-          const success = wasSuccessful(command, output);
-
-          steps.push({
+          const result = executeAndRecordStep({
+            command: args.command,
+            containerName,
+            verbose: config.verbose || false,
             iteration: iterations,
-            timestamp: commandStartTime,
-            duration: commandEndTime.getTime() - lastStepTime.getTime(),
-            reasoning: currentReasoning,
-            type: 'tool_call',
-            command,
-            output: output.substring(0, 10000),
-            technique: null,
-            methodology: undefined,
-            tool,
-            success,
-            inputTokens: stepInputTokens,
-            outputTokens: stepOutputTokens,
+            lastStepTime,
+            currentReasoning,
+            stepInputTokens,
+            stepOutputTokens,
           });
 
-          lastStepTime = commandEndTime;
-
-          const flagMatch = output.match(FLAG_PATTERN);
-          if (flagMatch) {
-            foundFlag = flagMatch[0];
-          }
+          steps.push(result.step);
+          lastStepTime = result.endTime;
+          if (result.flag) foundFlag = result.flag;
 
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: output.substring(0, 50000),
+            content: result.output.substring(0, 50000),
           });
         }
       } else {
@@ -645,38 +662,23 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
             console.log(chalk.cyan(`\n[fallback] Extracted command from text: ${fallbackCommand}`));
           }
 
-          const commandStartTime = new Date();
-          const output = executeCommand(fallbackCommand, containerName, config.verbose || false);
-          const commandEndTime = new Date();
-
-          const tool = fallbackCommand.trim().split(/\s+/)[0] || 'unknown';
-          const success = wasSuccessful(fallbackCommand, output);
-
-          steps.push({
-            iteration: iterations,
-            timestamp: commandStartTime,
-            duration: commandEndTime.getTime() - lastStepTime.getTime(),
-            reasoning: currentReasoning,
-            type: 'tool_call',
+          const result = executeAndRecordStep({
             command: fallbackCommand,
-            output: output.substring(0, 10000),
-            technique: null,
-            methodology: undefined,
-            tool,
-            success,
-            inputTokens: stepInputTokens,
-            outputTokens: stepOutputTokens,
+            containerName,
+            verbose: config.verbose || false,
+            iteration: iterations,
+            lastStepTime,
+            currentReasoning,
+            stepInputTokens,
+            stepOutputTokens,
           });
 
-          lastStepTime = commandEndTime;
-
-          const flagMatch = output.match(FLAG_PATTERN);
-          if (flagMatch) {
-            foundFlag = flagMatch[0];
-          }
+          steps.push(result.step);
+          lastStepTime = result.endTime;
+          if (result.flag) foundFlag = result.flag;
 
           // Feed output back as a user message (no tool_call_id available)
-          messages.push({ role: 'user', content: `Command output:\n${output.substring(0, 50000)}` });
+          messages.push({ role: 'user', content: `Command output:\n${result.output.substring(0, 50000)}` });
         } else if (choice.finish_reason === 'stop' && !foundFlag) {
           if (config.verbose) {
             console.log(chalk.yellow('\nAgent finished without finding flag.'));
