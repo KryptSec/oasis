@@ -110,8 +110,7 @@ function tryParseToolCallJson(jsonStr: string): string | null {
  *
  * Tries, in order:
  * 1. `<tool_call>JSON</tool_call>` tags
- * 2. Raw JSON with `"name":"run_command"`
- * 3. Balanced-brace JSON block scanning
+ * 2. Balanced-brace JSON blocks containing `"run_command"`
  */
 export function extractCommandFromText(text: string): string | null {
   const cleaned = stripThinkingTags(text);
