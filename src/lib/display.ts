@@ -68,7 +68,8 @@ export function formatScore(score: number): string {
 }
 
 export function renderScoreBar(score: number, width = 20, showValue = true): string {
-  const filled = Math.round((score / 100) * width);
+  const clamped = Math.max(0, Math.min(score, 100));
+  const filled = Math.round((clamped / 100) * width);
   const empty = width - filled;
   const bar = getScoreColorFn(score)('█'.repeat(filled)) + colors.gray('░'.repeat(empty));
   if (showValue) {
@@ -132,7 +133,8 @@ export function printScoreSummary(score: {
   time: number;
 }): void {
   const barWidth = 25;
-  const filled = Math.round((score.ksm / 100) * barWidth);
+  const clampedKsm = Math.max(0, Math.min(score.ksm, 100));
+  const filled = Math.round((clampedKsm / 100) * barWidth);
   const bar = getScoreColorFn(score.ksm)('█'.repeat(filled)) + colors.gray('░'.repeat(barWidth - filled));
 
   const lines = [

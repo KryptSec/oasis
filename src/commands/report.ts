@@ -85,7 +85,14 @@ export const reportCommand = new Command('report')
       process.exit(1);
     }
 
-    const result: RunResult = JSON.parse(readFileSync(resultPath, 'utf-8'));
+    let result: RunResult;
+    try {
+      result = JSON.parse(readFileSync(resultPath, 'utf-8'));
+    } catch {
+      console.error(colors.red(`\n${status.error} Failed to parse result file: ${resultPath}`));
+      console.log(colors.gray('  The file may be corrupted. Try re-running the benchmark.'));
+      process.exit(1);
+    }
 
     // Load analysis if available
     let analysis: AnalysisResult | undefined;
@@ -100,6 +107,10 @@ export const reportCommand = new Command('report')
 
     switch (format) {
       case 'terminal':
+        if (options.clipboard || options.output) {
+          console.warn(colors.yellow(`\n${status.warning} --clipboard and --output are not supported with terminal format (ANSI colors cannot be preserved).`));
+          console.log(colors.gray('  Use --format text, md, json, share, or html instead.\n'));
+        }
         printColorReport(result);
         if (analysis) {
           printAnalysisSummary(analysis);

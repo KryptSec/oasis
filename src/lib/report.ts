@@ -235,8 +235,9 @@ export function printAnalysisSummary(analysis: AnalysisResult): void {
   // Overall Score — hero card
   sectionHeader('OVERALL SCORE');
   const overall = analysis.strategy.overallScore;
+  const clampedOverall = Math.max(0, Math.min(overall, 100));
   const barWidth = 30;
-  const filled = Math.round((overall / 100) * barWidth);
+  const filled = Math.round((clampedOverall / 100) * barWidth);
   const bar = getScoreColorFn(overall)('█'.repeat(filled)) + colors.gray('░'.repeat(barWidth - filled));
   printBox([
     '',
@@ -500,7 +501,8 @@ export function generateShareCard(
   const score = ksmScore ?? analysis?.rubricScore?.percentage ?? analysis?.strategy?.overallScore;
   if (score != null && score > 0) {
     const barLen = 25;
-    const filled = Math.round((score / 100) * barLen);
+    const clampedScore = Math.max(0, Math.min(score, 100));
+    const filled = Math.round((clampedScore / 100) * barLen);
     const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(barLen - filled);
     md += `## \uD83C\uDFC6 OASIS Benchmark Result\n\n`;
     md += `**KSM Score: ${score.toFixed(1)}** ${bar}\n\n`;
@@ -546,7 +548,7 @@ export function generateHtmlReport(
   analysis?: AnalysisResult,
   ksmScore?: number,
 ): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   const score = ksmScore ?? analysis?.rubricScore?.percentage ?? analysis?.strategy?.overallScore;
   const resultClass = result.success ? 'success' : 'failed';
@@ -591,7 +593,7 @@ export function generateHtmlReport(
       const techId = s.technique ? esc(s.technique.id) : '-';
       const cmd = esc(truncateStr(s.command!, 60));
       const mark = s.success ? '<span class="success">\u2713</span>' : '<span class="failed">\u2717</span>';
-      return `<tr><td>${s.iteration}</td><td class="tech-id">${techId}</td><td class="mono">${cmd}</td><td class="dim">${t}</td><td>${mark}</td></tr>`;
+      return `<tr><td>${esc(String(s.iteration))}</td><td class="tech-id">${techId}</td><td class="mono">${cmd}</td><td class="dim">${esc(t)}</td><td>${mark}</td></tr>`;
     }).join('\n');
     attackPathHtml = `
       <h2>Attack Path</h2>
@@ -621,7 +623,7 @@ export function generateHtmlReport(
     ];
     const scoreBars = stratScores.map(s => `
       <div class="strat-row">
-        <span class="strat-label">${s.name}</span>
+        <span class="strat-label">${esc(s.name)}</span>
         <div class="strat-bar"><div class="strat-fill" style="width:${Math.min(s.score, 100)}%"></div></div>
         <span class="strat-val">${s.score}</span>
       </div>`).join('');
@@ -646,7 +648,7 @@ export function generateHtmlReport(
       ${scoreBars}
 
       <h3>Behavioral Approach</h3>
-      <span class="approach-badge ${approachClass}">${analysis.behavior.approach.toUpperCase()}</span>
+      <span class="approach-badge ${esc(approachClass)}">${esc(analysis.behavior.approach.toUpperCase())}</span>
       <p class="dim">${esc(analysis.behavior.approachDescription)}</p>
 
       ${strengths ? `<h3>Strengths</h3><ul>${strengths}</ul>` : ''}
@@ -716,8 +718,8 @@ export function generateHtmlReport(
     <div class="meta-item"><div class="meta-label">Result</div><div class="meta-value ${resultClass}">${resultText}</div></div>
     <div class="meta-item"><div class="meta-label">Flag</div><div class="meta-value">${result.success ? `<span class="success">${flagText}</span>` : `<span class="dim">${flagText}</span>`}</div></div>
     <div class="meta-item"><div class="meta-label">Time</div><div class="meta-value">${timeStr}</div></div>
-    <div class="meta-item"><div class="meta-label">Steps</div><div class="meta-value">${result.iterations}</div></div>
-    <div class="meta-item"><div class="meta-label">Tokens</div><div class="meta-value">${result.tokens.total.toLocaleString()}</div></div>
+    <div class="meta-item"><div class="meta-label">Steps</div><div class="meta-value">${esc(String(result.iterations))}</div></div>
+    <div class="meta-item"><div class="meta-label">Tokens</div><div class="meta-value">${esc(result.tokens.total.toLocaleString())}</div></div>
   </div>
 
   <h2>Tools Used</h2>
