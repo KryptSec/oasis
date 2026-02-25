@@ -16,6 +16,9 @@ dist/
 # Local challenges (downloaded separately)
 /challenges/
 
+# Internal docs (strategy, board materials — not for public repo)
+docs/internal/
+
 # Claude Code
 .claude/
 
