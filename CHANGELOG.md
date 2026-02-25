@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Interactive run wizard uses live model list with spinner + fallback to examples
 - Back-navigation wizard integrated with live model fetching
 - `executeAndRecordStep` helper now includes technique classification
+- Bumped `@anthropic-ai/sdk` ^0.71.2 → ^0.78.0
+- Bumped `openai` ^4.0.0 → ^6.25.0 (added type guard for v6 union type in runner)
 
 ## [0.1.2] - 2026-02-23
 
