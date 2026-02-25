@@ -42,7 +42,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@inquirer/prompts": "^8.2.1",
     "boxen": "^8.0.1",
     "chalk": "^5.3.0",
@@ -50,7 +50,7 @@
     "commander": "^12.1.0",
     "dotenv": "^16.3.1",
     "gradient-string": "^3.0.0",
-    "openai": "^4.0.0",
+    "openai": "^6.25.0",
     "ora": "^8.1.1"
   },
   "devDependencies": {

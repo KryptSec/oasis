@@ -634,6 +634,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
 
       if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
         for (const toolCall of assistantMessage.tool_calls) {
+          if (toolCall.type !== 'function') continue;
           const args = JSON.parse(toolCall.function.arguments);
           const result = executeAndRecordStep({
             command: args.command,
