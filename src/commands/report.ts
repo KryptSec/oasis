@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { existsSync, readFileSync, writeFileSync, readdirSync } from 'fs';
-import { resolve as pathResolve } from 'path';
+import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync } from 'fs';
+import { resolve as pathResolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { colors, status } from '../lib/display.js';
 import { getResultsDir } from '../lib/config.js';
@@ -156,8 +156,25 @@ export const reportCommand = new Command('report')
         console.log(output);
       }
     } else if (options.output) {
-      writeFileSync(options.output, output);
-      console.log(colors.green(`\n${status.success} Report written to: ${options.output}`));
+      const outputPath = pathResolve(options.output);
+
+      // Warn if target is a symlink — may point somewhere unexpected
+      if (existsSync(outputPath)) {
+        const stat = lstatSync(outputPath);
+        if (stat.isSymbolicLink()) {
+          console.warn(colors.yellow(`\n${status.warning} Output path is a symlink: ${outputPath}`));
+        }
+      }
+
+      // Ensure parent directory exists
+      const parent = dirname(outputPath);
+      if (!existsSync(parent)) {
+        console.error(colors.red(`\n${status.error} Parent directory does not exist: ${parent}`));
+        process.exit(1);
+      }
+
+      writeFileSync(outputPath, output, { mode: 0o644 });
+      console.log(colors.green(`\n${status.success} Report written to: ${outputPath}`));
     } else {
       console.log(output);
     }

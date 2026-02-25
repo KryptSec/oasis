@@ -439,3 +439,36 @@ describe('calculateEfficacy', () => {
     expect(calculateEfficacy('sqli-101', 'claude-sonnet', '/tmp/nonexistent-oasis-dir')).toBe(0);
   });
 });
+
+// =============================================================================
+// calculateKSM — edge cases: negative, NaN, >100
+// =============================================================================
+
+describe('calculateKSM edge cases (clamping)', () => {
+  it('handles negative methodology', () => {
+    // Negative methodology should still produce a number (formula applies as-is)
+    const result = calculateKSM(-10, 50);
+    expect(result).toBe(-10);
+  });
+
+  it('handles NaN methodology', () => {
+    const result = calculateKSM(NaN, 50);
+    expect(result).toBeNaN();
+  });
+
+  it('handles NaN efficacy as success branch (returns methodology)', () => {
+    // NaN fails the < comparisons, falls through to success branch
+    const result = calculateKSM(80, NaN);
+    expect(result).toBe(80);
+  });
+
+  it('caps methodology > 100 at 100', () => {
+    // KSM implementation clamps output to [0, 100]
+    expect(calculateKSM(120, 100)).toBe(100);
+  });
+
+  it('handles efficacy > 100', () => {
+    // efficacy=150 ≥ 50 → KSM = methodology
+    expect(calculateKSM(80, 150)).toBe(80);
+  });
+});

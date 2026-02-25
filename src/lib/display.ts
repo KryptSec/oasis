@@ -37,7 +37,14 @@ export const status = {
 // Brand Gradient
 // =============================================================================
 
-export const brandGradient: (text: string) => string = gradient(['#a855f7', '#22d3ee']);
+// Graceful fallback: gradient-string may fail on terminals that don't support truecolor
+let brandGradientFn: (text: string) => string;
+try {
+  brandGradientFn = gradient(['#a855f7', '#22d3ee']);
+} catch {
+  brandGradientFn = (text: string) => colors.purple(text);
+}
+export const brandGradient = brandGradientFn;
 
 // =============================================================================
 // Terminal Width
@@ -132,10 +139,7 @@ export function printScoreSummary(score: {
   efficiency: number;
   time: number;
 }): void {
-  const barWidth = 25;
-  const clampedKsm = Math.max(0, Math.min(score.ksm, 100));
-  const filled = Math.round((clampedKsm / 100) * barWidth);
-  const bar = getScoreColorFn(score.ksm)('█'.repeat(filled)) + colors.gray('░'.repeat(barWidth - filled));
+  const bar = renderScoreBar(score.ksm, 25, false);
 
   const lines = [
     '',

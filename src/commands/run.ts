@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync } from 'fs';
@@ -29,7 +29,13 @@ export const runCommand = new Command('run')
   .option('--analyzer-key <key>', 'Separate API key for analysis (defaults to anthropic key)')
   .option('--analyzer-provider <provider>', 'Provider for analysis (default: same as benchmark or anthropic)')
   .option('--analyzer-url <url>', 'Custom API endpoint for analyzer')
-  .option('--max-iterations <n>', 'Override max iterations', parseInt)
+  .option('--max-iterations <n>', 'Override max iterations', (val: string) => {
+    const n = parseInt(val, 10);
+    if (isNaN(n) || n < 1) {
+      throw new InvalidArgumentError('Must be a positive integer.');
+    }
+    return n;
+  })
   .option('--report', 'Print detailed report after run', false)
   .option('--verbose', 'Show detailed output', false)
   .action(async (options) => {

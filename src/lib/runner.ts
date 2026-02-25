@@ -8,7 +8,7 @@ import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
 import { wasSuccessful, classifyToAttack, classifyCommand } from './classifier.js';
-import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig } from './types.js';
+import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig, AnalysisResult } from './types.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
 
@@ -605,7 +605,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
 
       let currentReasoning = '';
 
-      const reasoningText = (assistantMessage as any).reasoning_content || assistantMessage.content || '';
+      const reasoningText = ('reasoning_content' in assistantMessage ? (assistantMessage as Record<string, unknown>).reasoning_content as string : null) || assistantMessage.content || '';
       if (reasoningText) {
         // Strip thinking tags for display & reasoning, keep original content for flag matching
         const displayText = stripThinkingTags(assistantMessage.content || '');
@@ -766,7 +766,7 @@ export function saveRunResult(result: RunResult, resultsDir: string): { jsonPath
   }
 
   const jsonPath = resolve(resultsDir, `${result.id}.json`);
-  writeFileSync(jsonPath, JSON.stringify(result, null, 2));
+  writeFileSync(jsonPath, JSON.stringify(result, null, 2), { mode: 0o600 });
 
   // Text report path (generated separately by report module)
   const txtPath = resolve(resultsDir, `${result.id}.txt`);
@@ -776,7 +776,7 @@ export function saveRunResult(result: RunResult, resultsDir: string): { jsonPath
 
 export function saveAnalysisResult(
   runId: string,
-  analysis: any,
+  analysis: AnalysisResult,
   resultsDir: string
 ): { jsonPath: string; txtPath: string } {
   if (!existsSync(resultsDir)) {
@@ -788,7 +788,7 @@ export function saveAnalysisResult(
     throw new Error(`Invalid run ID: "${runId}"`);
   }
   const jsonPath = resolve(resultsDir, `${runId}.analysis.json`);
-  writeFileSync(jsonPath, JSON.stringify(analysis, null, 2));
+  writeFileSync(jsonPath, JSON.stringify(analysis, null, 2), { mode: 0o600 });
 
   const txtPath = resolve(resultsDir, `${runId}.analysis.txt`);
 

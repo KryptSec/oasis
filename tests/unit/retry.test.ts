@@ -9,6 +9,7 @@ import {
   RATE_LIMIT_BASE_DELAY_MS,
   QuotaExceededError,
   isQuotaExceededError,
+  ApiTimeoutError,
 } from '../../src/lib/retry.js';
 
 // =============================================================================
@@ -305,5 +306,35 @@ describe('QuotaExceededError', () => {
   it('has correct message', () => {
     const err = new QuotaExceededError('quota exceeded');
     expect(err.message).toBe('quota exceeded');
+  });
+});
+
+// =============================================================================
+// ApiTimeoutError
+// =============================================================================
+
+describe('ApiTimeoutError', () => {
+  it('includes context and timeout in message', () => {
+    const err = new ApiTimeoutError('Analysis', 120000);
+    expect(err.message).toBe('Analysis: timed out after 120s');
+    expect(err.name).toBe('ApiTimeoutError');
+  });
+});
+
+// =============================================================================
+// withRateLimitRetry — timeout behavior
+// =============================================================================
+
+describe('withRateLimitRetry timeout', () => {
+  it('throws ApiTimeoutError when operation exceeds timeout', async () => {
+    // Use a very short real timeout — no fake timers needed
+    const slowFn = () => new Promise<string>(resolve => setTimeout(() => resolve('done'), 5000));
+    await expect(withRateLimitRetry(slowFn, 'TestOp', false, 50)).rejects.toThrow(ApiTimeoutError);
+  });
+
+  it('succeeds when operation completes within timeout', async () => {
+    const fastFn = () => Promise.resolve('quick');
+    const result = await withRateLimitRetry(fastFn, 'TestOp', false, 5000);
+    expect(result).toBe('quick');
   });
 });

@@ -118,9 +118,20 @@ describe('resolveDefaultAnalyzerModel', () => {
     expect(resolveDefaultAnalyzerModel('claude', result)).toBe(DEFAULT_ANALYZER_MODEL);
   });
 
-  it('returns benchmark model when providers match (ollama)', () => {
+  it('returns benchmark model for ollama (always, regardless of provider matching)', () => {
     const result = makeRunResult('ollama', 'qwen3:30b');
     expect(resolveDefaultAnalyzerModel('ollama', result)).toBe('qwen3:30b');
+  });
+
+  it('returns benchmark model for ollama even with unknown model name', () => {
+    const result = makeRunResult('ollama', 'my-custom-finetune:latest');
+    expect(resolveDefaultAnalyzerModel('ollama', result)).toBe('my-custom-finetune:latest');
+  });
+
+  it('falls back to model field when modelVersion is empty for ollama', () => {
+    const result = makeRunResult('ollama', '');
+    result.model = 'deepseek-r1:14b';
+    expect(resolveDefaultAnalyzerModel('ollama', result)).toBe('deepseek-r1:14b');
   });
 
   it('returns benchmark model when providers match (openai)', () => {
