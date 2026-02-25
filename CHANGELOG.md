@@ -4,6 +4,27 @@ All notable changes to OASIS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.4] - 2026-02-27
+
+### Security
+
+- Fixed TOCTOU vulnerability in credential file writes — now uses atomic mode setting (0o600)
+- Fixed world-readable result files — benchmark transcripts now written with 0o600 permissions
+- Added path validation for `report --output` flag — prevents path traversal, warns on symlinks
+- Added input validation for `--max-iterations` — rejects NaN and negative values
+
+### Fixed
+
+- Ollama analyzer now defaults to benchmark model instead of hardcoded llama3.3 (#33)
+- API calls now timeout after 120s instead of hanging indefinitely on network issues
+- Fixed `analysis: any` type annotations — now uses proper `AnalysisResult` interface
+- gradient-string now has graceful fallback for terminals without truecolor support (Windows)
+
+### Changed
+
+- Deduplicated score bar rendering — now uses shared `renderScoreBar()` helper
+- Added 25 new tests (346 total) — XSS escaping, timeout behavior, score edge cases
+
 ## [0.1.3] - 2026-02-24
 
 ### Added
