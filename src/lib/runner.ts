@@ -7,7 +7,7 @@ import chalk from 'chalk';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
-import { wasSuccessful } from './classifier.js';
+import { wasSuccessful, classifyToAttack, classifyCommand } from './classifier.js';
 import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig } from './types.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
@@ -204,6 +204,8 @@ function executeAndRecordStep(opts: {
   const tool = opts.command.trim().split(/\s+/)[0] || 'unknown';
   const success = wasSuccessful(opts.command, output);
 
+  const technique = classifyToAttack(opts.command);
+
   const step: Step = {
     iteration: opts.iteration,
     timestamp: startTime,
@@ -212,8 +214,8 @@ function executeAndRecordStep(opts: {
     type: 'tool_call',
     command: opts.command,
     output: output.substring(0, 10000),
-    technique: null,
-    methodology: undefined,
+    technique,
+    methodology: classifyCommand(opts.command),
     tool,
     success,
     inputTokens: opts.stepInputTokens,
@@ -422,6 +424,7 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
 
           const tool = command.trim().split(/\s+/)[0] || 'unknown';
           const success = wasSuccessful(command, output);
+          const technique = classifyToAttack(command);
 
           steps.push({
             iteration: iterations,
@@ -431,8 +434,8 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
             type: 'tool_call',
             command,
             output: output.substring(0, 10000),
-            technique: null,
-            methodology: undefined,
+            technique,
+            methodology: classifyCommand(command),
             tool,
             success,
             inputTokens: stepInputTokens,

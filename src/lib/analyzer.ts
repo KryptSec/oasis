@@ -312,6 +312,24 @@ async function parseAnalysisResponse(
           techniques: Array.from(data.techniques),
         };
       }
+
+      // Backfill step-level techniques from LLM analysis (stepsUsed mapping)
+      for (const enrichedTech of analysisResult.attackChain.techniques) {
+        if (!enrichedTech.stepsUsed?.length) continue;
+        const techObj = {
+          id: enrichedTech.id || 'T0000',
+          name: enrichedTech.name || 'Unknown',
+          tactic: enrichedTech.tactic || 'Unknown',
+          url: `https://attack.mitre.org/techniques/${(enrichedTech.id || 'T0000').replace('.', '/')}/`,
+        };
+        for (const stepIdx of enrichedTech.stepsUsed) {
+          // stepsUsed is 1-indexed from the LLM
+          const step = result.steps[stepIdx - 1];
+          if (step && step.type === 'tool_call') {
+            step.technique = techObj;
+          }
+        }
+      }
     }
 
     return analysisResult;

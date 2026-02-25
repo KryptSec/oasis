@@ -49,11 +49,15 @@ git clone https://github.com/kryptsec/oasis-challenges.git challenges
 cd challenges/gatekeeper && docker compose up -d && cd ../..
 
 # 4. Run a benchmark
-oasis run -c gatekeeper -m claude-sonnet-4-5-20250929
+oasis run -c gatekeeper -m claude-sonnet-4-5-20250929 -p anthropic
 
 # 5. View results
 oasis results list
 oasis report <run-id> --format md
+
+# 6. Share results
+oasis report <run-id> -f share --clipboard    # Copy markdown share card
+oasis report <run-id> -f html -o report.html  # Standalone HTML report
 ```
 
 ## How It Works
@@ -104,12 +108,14 @@ See [KSM-SCORING.md](spec/KSM-SCORING.md) for the full specification.
 
 | Provider | Example Models | Notes |
 |----------|---------------|-------|
-| **Anthropic** | Claude Sonnet 4.5, Haiku 3.5 | Native SDK |
-| **OpenAI** | GPT-4o, o1, o3-mini | Native SDK |
-| **xAI** | Grok 3, Grok 2 | OpenAI-compatible |
-| **Google** | Gemini 2.0 Flash, Gemini 1.5 Pro | OpenAI-compatible |
+| **Anthropic** | Claude Opus 4.6, Sonnet 4.5, Haiku 4.5 | Native SDK |
+| **OpenAI** | o3, o4-mini, GPT-4.1, GPT-4o | Native SDK |
+| **xAI** | Grok 4, Grok 3, Grok 3 Mini | OpenAI-compatible |
+| **Google** | Gemini 2.5 Pro, Gemini 2.5 Flash | OpenAI-compatible |
 | **Ollama** | Any local model | No API key needed |
 | **Custom** | Any model via `--api-url` | OpenAI-compatible |
+
+Model lists are fetched live from provider APIs when an API key is configured. Fallback example lists are shown when no key is available.
 
 Aliases: `claude` → `anthropic`, `grok` → `xai`, `gemini` → `google`
 
@@ -123,7 +129,7 @@ Aliases: `claude` → `anthropic`, `grok` → `xai`, `gemini` → `google`
 | `oasis results list` | List all benchmark results |
 | `oasis results show <id>` | Show detailed run results |
 | `oasis results compare <a> <b>` | Side-by-side comparison of two runs |
-| `oasis report <id>` | Generate reports (terminal, json, md, text) |
+| `oasis report <id>` | Generate reports (terminal, json, md, text, share, html) |
 | `oasis challenges` | List available challenges |
 | `oasis config` | Manage API keys and settings |
 | `oasis validate <path>` | Validate a challenge configuration |

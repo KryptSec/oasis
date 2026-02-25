@@ -1,13 +1,14 @@
 import { select, input, password, confirm } from '@inquirer/prompts';
-import { colors, status } from '../lib/display.js';
+import { colors, status, printBox } from '../lib/display.js';
 import {
   getApiKey, setApiKey, deleteApiKey, listApiKeys,
   getConfigValue, setConfigValue, deleteConfigValue,
   getEffectiveProviderUrl, setProviderUrl, deleteProviderUrl, listProviderUrls,
   normalizeProvider,
 } from '../lib/config.js';
-import { PROVIDERS } from '../lib/providers.js';
+import { PROVIDERS, fetchAvailableModels } from '../lib/providers.js';
 import { checkApiKey } from '../lib/env-check.js';
+import ora from 'ora';
 
 export async function configureKeysFlow(): Promise<void> {
   while (true) {
@@ -53,10 +54,7 @@ async function viewKeys(): Promise<void> {
   const stored = listApiKeys();
   const providers = Object.keys(PROVIDERS);
 
-  console.log();
-  console.log(colors.white.bold('  Configured API Keys'));
-  console.log(colors.gray('  ' + '─'.repeat(50)));
-
+  const keyLines: string[] = [];
   for (const name of providers) {
     const preset = PROVIDERS[name];
     if (!preset.envKey && name !== 'ollama') continue;
@@ -75,26 +73,27 @@ async function viewKeys(): Promise<void> {
       indicator = colors.gray(`${status.pending} not set`);
     }
 
-    console.log(`  ${colors.white(preset.displayName.padEnd(12))} ${indicator}`);
+    keyLines.push(`  ${colors.white(preset.displayName.padEnd(12))} ${indicator}`);
   }
 
   // Show defaults
   const defaultProvider = getConfigValue('defaultProvider');
   const defaultModel = getConfigValue('defaultModel');
-  console.log();
-  console.log(`  ${colors.gray('Default provider:')} ${defaultProvider ? colors.cyan(defaultProvider) : colors.gray('not set')}`);
-  console.log(`  ${colors.gray('Default model:')}    ${defaultModel ? colors.cyan(defaultModel) : colors.gray('not set')}`);
+  keyLines.push('');
+  keyLines.push(`  ${colors.gray('Default provider:')} ${defaultProvider ? colors.cyan(defaultProvider) : colors.gray('not set')}`);
+  keyLines.push(`  ${colors.gray('Default model:')}    ${defaultModel ? colors.cyan(defaultModel) : colors.gray('not set')}`);
 
   // Show custom URLs
   const urls = listProviderUrls();
   if (Object.keys(urls).length > 0) {
-    console.log();
-    console.log(colors.gray('  Custom URLs:'));
+    keyLines.push('');
     for (const [provider, url] of Object.entries(urls)) {
-      console.log(`    ${colors.white(provider)}: ${colors.cyan(url)}`);
+      keyLines.push(`  ${colors.white(provider)}: ${colors.cyan(url)}`);
     }
   }
 
+  console.log();
+  printBox(keyLines.join('\n'), { title: 'API Keys' });
   console.log();
 }
 
@@ -196,11 +195,61 @@ async function setDefaultProvider(): Promise<void> {
 
 async function setDefaultModel(): Promise<void> {
   const current = getConfigValue('defaultModel');
+  const defaultProvider = getConfigValue('defaultProvider');
 
-  const model = await input({
-    message: `Default model ID${current ? ` (current: ${current})` : ''}:`,
-    default: current,
-  });
+  if (!defaultProvider) {
+    console.log(colors.gray(`\n  Tip: Set a default provider first for model suggestions.`));
+    const model = await input({
+      message: `Default model ID${current ? ` (current: ${current})` : ''}:`,
+      default: current || '',
+    });
+    if (model && model.trim().length > 0) {
+      setConfigValue('defaultModel', model.trim());
+      console.log(colors.green(`\n  ${status.success} Default model set to ${model.trim()}\n`));
+    }
+    return;
+  }
+
+  // Fetch live models from the provider API
+  const apiKey = getApiKey(defaultProvider);
+  const baseUrl = getEffectiveProviderUrl(defaultProvider) || undefined;
+
+  const spinner = ora({ text: `Fetching models from ${defaultProvider}...`, prefixText: status.info }).start();
+  const { models: availableModels, live } = await fetchAvailableModels(defaultProvider, apiKey, baseUrl);
+  if (live) {
+    spinner.succeed(`Found ${availableModels.length} models from ${defaultProvider}`);
+  } else {
+    spinner.info(`Showing example models (no API key configured for live fetch)`);
+  }
+
+  let model: string;
+
+  if (availableModels.length > 0) {
+    const modelChoices = [
+      ...availableModels.map(m => ({ name: m, value: m })),
+      { name: colors.gray('Custom model ID...'), value: '__custom__' },
+    ];
+
+    const selected = await select({
+      message: `Default model${current ? ` (current: ${colors.cyan(current)})` : ''}`,
+      choices: modelChoices,
+      default: current && availableModels.includes(current) ? current : undefined,
+    });
+
+    if (selected === '__custom__') {
+      model = await input({
+        message: 'Enter model ID:',
+        default: current || '',
+      });
+    } else {
+      model = selected;
+    }
+  } else {
+    model = await input({
+      message: `Default model ID${current ? ` (current: ${current})` : ''}:`,
+      default: current || '',
+    });
+  }
 
   if (model && model.trim().length > 0) {
     setConfigValue('defaultModel', model.trim());

@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
-import { colors, status, formatScore, formatTime, formatDifficulty } from '../lib/display.js';
+import Table from 'cli-table3';
+import { colors, status, formatScore, formatTime, printBox, sectionHeader } from '../lib/display.js';
 import { calculateKSM, calculateEfficacyFromResults } from '../lib/scoring.js';
 import { getResultsDir, getChallengesDir } from '../lib/config.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
@@ -38,9 +39,11 @@ resultsCommand
       return;
     }
 
-    console.log(colors.white.bold('\nBenchmark Results\n'));
-    console.log(colors.gray(`${'ID'.padEnd(12)} ${'Challenge'.padEnd(15)} ${'Model'.padEnd(30)} ${'Result'.padEnd(10)} ${'Time'.padEnd(8)} Score`));
-    console.log(colors.gray('─'.repeat(90)));
+    sectionHeader('Benchmark Results');
+    const table = new Table({
+      head: ['ID', 'Challenge', 'Model', 'Result', 'Time', 'Score'],
+      style: { head: ['cyan'], border: ['gray'] },
+    });
 
     const limit = parseInt(options.limit) || 20;
 
@@ -84,18 +87,19 @@ resultsCommand
       const resultStr = result.success ? colors.green('SUCCESS') : colors.red('FAILED');
       const timeStr = `${result.totalTime.toFixed(1)}s`;
 
-      console.log(
-        `${colors.cyan(id.padEnd(12))} ` +
-        `${colors.white(result.challenge.padEnd(15))} ` +
-        `${colors.gray((result.modelVersion || '').padEnd(30))} ` +
-        `${resultStr.padEnd(10)} ` +
-        `${colors.yellow(timeStr.padEnd(8))} ` +
-        `${score !== '-' ? formatScore(parseFloat(score)) : colors.gray('-')}`
-      );
+      table.push([
+        colors.cyan(id),
+        colors.white(result.challenge),
+        colors.gray((result.modelVersion || '').substring(0, 30)),
+        resultStr,
+        colors.yellow(timeStr),
+        score !== '-' ? formatScore(parseFloat(score)) : colors.gray('-'),
+      ]);
       count++;
     }
 
-    console.log(colors.gray(`\nShowing ${count} of ${files.length} results.`));
+    console.log(table.toString());
+    console.log(colors.gray(`\n  Showing ${count} of ${files.length} results.`));
     if (files.length > limit) {
       console.log(colors.gray(`Use --limit to show more.`));
     }
@@ -128,33 +132,31 @@ resultsCommand
 
     const result: RunResult = JSON.parse(readFileSync(resultPath, 'utf-8'));
 
-    console.log(colors.white.bold(`\nRun: ${result.id}`));
-    console.log(colors.gray('─'.repeat(50)));
-    console.log(`  ${colors.gray('Challenge:')}    ${colors.white(result.challenge)}`);
-    console.log(`  ${colors.gray('Model:')}        ${colors.white(result.modelVersion)}`);
-    console.log(`  ${colors.gray('Provider:')}     ${colors.white(result.model)}`);
-    console.log(`  ${colors.gray('Result:')}       ${result.success ? colors.green('SUCCESS') : colors.red('FAILED')}`);
-    console.log(`  ${colors.gray('Flag:')}         ${result.flag ? colors.green(result.flag) : colors.gray('Not found')}`);
-    console.log(`  ${colors.gray('Time:')}         ${colors.yellow(result.totalTime.toFixed(1) + 's')}`);
-    console.log(`  ${colors.gray('Iterations:')}   ${colors.yellow(result.iterations.toString())}`);
-    console.log(`  ${colors.gray('Tokens:')}       ${colors.cyan(result.tokens.total.toLocaleString())}`);
-    console.log(`  ${colors.gray('Tools Used:')}   ${colors.white(result.toolsUsed?.join(', ') || 'N/A')}`);
+    console.log();
+    printBox([
+      `  ${colors.gray('Run ID')}       ${colors.yellow(result.id)}`,
+      `  ${colors.gray('Challenge')}    ${colors.white(result.challenge)}`,
+      `  ${colors.gray('Model')}        ${colors.cyan(result.modelVersion)}`,
+      `  ${colors.gray('Provider')}     ${colors.white(result.model)}`,
+      `  ${colors.gray('Result')}       ${result.success ? colors.green('SUCCESS') : colors.red('FAILED')}`,
+      `  ${colors.gray('Flag')}         ${result.flag ? colors.green(result.flag) : colors.gray('Not found')}`,
+      `  ${colors.gray('Time')}         ${colors.yellow(result.totalTime.toFixed(1) + 's')}`,
+      `  ${colors.gray('Iterations')}   ${colors.yellow(result.iterations.toString())}`,
+      `  ${colors.gray('Tokens')}       ${colors.cyan(result.tokens.total.toLocaleString())}`,
+      `  ${colors.gray('Tools')}        ${colors.white(result.toolsUsed?.join(', ') || 'N/A')}`,
+    ].join('\n'), { title: 'Run Details' });
 
-    // Show techniques if available
     if (result.techniquesUsed?.length > 0) {
-      console.log(colors.gray('\n  ATT&CK Techniques:'));
+      console.log();
       for (const tech of result.techniquesUsed) {
-        console.log(`    ${colors.yellow(tech.id)} ${colors.white(tech.name)} ${colors.gray(`(${tech.tactic})`)}`);
+        console.log(`  ${colors.yellow(tech.id)} ${colors.white(tech.name)} ${colors.gray(`(${tech.tactic})`)}`);
       }
     }
 
-    // Check for analysis
-    if (existsSync(analysisPath)) {
-      console.log(colors.gray(`\n  Analysis: available (oasis analyze ${runId} to view)`));
-    } else {
-      console.log(colors.gray(`\n  Analysis: not run yet (oasis analyze ${runId})`));
-    }
-
+    const analysisNote = existsSync(analysisPath)
+      ? `Analysis: available (oasis analyze ${runId} to view)`
+      : `Analysis: not run yet (oasis analyze ${runId})`;
+    console.log(`\n  ${colors.gray(analysisNote)}`);
     console.log();
   });
 
@@ -213,11 +215,11 @@ resultsCommand
     if (existsSync(ap1)) a1 = JSON.parse(readFileSync(ap1, 'utf-8'));
     if (existsSync(ap2)) a2 = JSON.parse(readFileSync(ap2, 'utf-8'));
 
-    const col = 30;
-
-    console.log(colors.white.bold('\nRun Comparison\n'));
-    console.log(colors.gray(`${'Metric'.padEnd(22)} ${id1.padEnd(col)} ${id2.padEnd(col)}`));
-    console.log(colors.gray('─'.repeat(22 + col * 2 + 2)));
+    sectionHeader('Run Comparison');
+    const compareTable = new Table({
+      head: ['Metric', id1, id2],
+      style: { head: ['cyan'], border: ['gray'] },
+    });
 
     const rows: [string, string, string][] = [
       ['Model', r1.modelVersion, r2.modelVersion],
@@ -246,9 +248,9 @@ resultsCommand
     }
 
     for (const [label, v1, v2] of rows) {
-      console.log(`  ${colors.gray(label.padEnd(20))} ${colors.white(v1.padEnd(col))} ${colors.white(v2.padEnd(col))}`);
+      compareTable.push([colors.gray(label), colors.white(v1), colors.white(v2)]);
     }
-
+    console.log(compareTable.toString());
     console.log();
   });
 
@@ -410,19 +412,11 @@ resultsCommand
     });
 
     // Display
-    console.log(colors.white.bold('\nOASIS Results Summary\n'));
-    console.log(
-      colors.gray(
-        `${'OWASP Category'.padEnd(35)} ` +
-        `${'Labs'.padEnd(8)} ` +
-        `${'Runs'.padEnd(8)} ` +
-        `${'Success'.padEnd(10)} ` +
-        `${'Best'.padEnd(8)} ` +
-        `${'Avg'.padEnd(8)} ` +
-        `Best Model`
-      )
-    );
-    console.log(colors.gray('─'.repeat(110)));
+    sectionHeader('OASIS Results Summary');
+    const summaryTable = new Table({
+      head: ['OWASP Category', 'Labs', 'Runs', 'Success', 'Best', 'Avg', 'Best Model'],
+      style: { head: ['cyan'], border: ['gray'] },
+    });
 
     let totalChallenges = 0;
     let totalRuns = 0;
@@ -444,15 +438,15 @@ resultsCommand
         ? colors.white(cat.bestModel.length > 25 ? cat.bestModel.substring(0, 22) + '...' : cat.bestModel)
         : colors.gray('-');
 
-      console.log(
-        `  ${colors.cyan(categoryDisplay.padEnd(33))} ` +
-        `${colors.white(cat.challenges.length.toString().padEnd(8))} ` +
-        `${colors.white(cat.totalRuns.toString().padEnd(8))} ` +
-        `${successStr.padEnd(10)} ` +
-        `${bestStr.padEnd(8)} ` +
-        `${avgStr.padEnd(8)} ` +
-        `${modelStr}`
-      );
+      summaryTable.push([
+        colors.cyan(categoryDisplay),
+        colors.white(cat.challenges.length.toString()),
+        colors.white(cat.totalRuns.toString()),
+        successStr,
+        bestStr,
+        avgStr,
+        modelStr,
+      ]);
 
       totalChallenges += cat.challenges.length;
       totalRuns += cat.totalRuns;
@@ -462,7 +456,7 @@ resultsCommand
       }
     }
 
-    console.log(colors.gray('─'.repeat(110)));
+    console.log(summaryTable.toString());
     const overallAvg = totalScoredCount > 0 ? Math.round(totalScoreSum / totalScoredCount) : 0;
     console.log(
       colors.white(
@@ -553,18 +547,11 @@ function compareByChallengeId(challengeId: string): void {
     return a.result.totalTime - b.result.totalTime;
   });
 
-  console.log(colors.white.bold(`\nChallenge: ${challengeId}${colors.gray(owaspLabel)}\n`));
-  console.log(
-    colors.gray(
-      `  ${'Model'.padEnd(28)} ` +
-      `${'Result'.padEnd(10)} ` +
-      `${'KSM'.padEnd(8)} ` +
-      `${'Time'.padEnd(10)} ` +
-      `${'Steps'.padEnd(8)} ` +
-      `Approach`
-    )
-  );
-  console.log(colors.gray('  ' + '─'.repeat(85)));
+  sectionHeader(`Challenge: ${challengeId}${owaspLabel}`);
+  const challengeTable = new Table({
+    head: ['Model', 'Result', 'KSM', 'Time', 'Steps', 'Approach'],
+    style: { head: ['cyan'], border: ['gray'] },
+  });
 
   for (const run of runs) {
     const model = (run.result.modelVersion || '').length > 26
@@ -580,16 +567,17 @@ function compareByChallengeId(challengeId: string): void {
       ? colors.cyan(run.analysis.behavior.approach)
       : colors.gray('-');
 
-    console.log(
-      `  ${colors.white(model.padEnd(28))} ` +
-      `${resultStr.padEnd(10)} ` +
-      `${scoreStr.padEnd(8)} ` +
-      `${timeStr.padEnd(10)} ` +
-      `${stepsStr.padEnd(8)} ` +
-      `${approachStr}`
-    );
+    challengeTable.push([
+      colors.white(model),
+      resultStr,
+      scoreStr,
+      timeStr,
+      stepsStr,
+      approachStr,
+    ]);
   }
 
+  console.log(challengeTable.toString());
   console.log(colors.gray(`\n  ${runs.length} run${runs.length !== 1 ? 's' : ''} found.`));
   console.log();
 }

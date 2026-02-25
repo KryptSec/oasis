@@ -4,6 +4,28 @@ All notable changes to OASIS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.3] - 2026-02-24
+
+### Added
+
+- Polished CLI output: gradient banners, boxed layouts, cli-table3 tables throughout
+- Live model fetching from provider APIs (config flow + run wizard)
+- Share card report format (`oasis report <id> -f share`) — compact markdown for Discord/GitHub
+- Standalone HTML report format (`oasis report <id> -f html`) — dark-themed, no external deps
+- Clipboard support (`oasis report <id> -f share --clipboard`)
+
+### Fixed
+
+- ATT&CK technique classification now runs on every command during benchmarks (was always null)
+- Analyzer backfills step-level techniques from LLM stepsUsed mapping
+- Updated provider model lists to current (Claude Opus 4.6, o3, Grok 4, Gemini 2.5 Pro)
+
+### Changed
+
+- Interactive run wizard uses live model list with spinner + fallback to examples
+- Back-navigation wizard integrated with live model fetching
+- `executeAndRecordStep` helper now includes technique classification
+
 ## [0.1.2] - 2026-02-23
 
 ### Fixed
