@@ -3,7 +3,7 @@
 
 import Table from 'cli-table3';
 import type { RunResult, AttackTechnique, AnalysisResult } from './types.js';
-import { colors, status, sectionHeader, printBox, divider, getScoreColorFn, renderScoreBar, formatScore } from './display.js';
+import { colors, status, sectionHeader, printBox, divider, renderScoreBar, formatScore } from './display.js';
 
 // MITRE ATT&CK Tactic icons
 const TACTIC_ICONS: Record<string, string> = {
@@ -235,10 +235,7 @@ export function printAnalysisSummary(analysis: AnalysisResult): void {
   // Overall Score — hero card
   sectionHeader('OVERALL SCORE');
   const overall = analysis.strategy.overallScore;
-  const clampedOverall = Math.max(0, Math.min(overall, 100));
-  const barWidth = 30;
-  const filled = Math.round((clampedOverall / 100) * barWidth);
-  const bar = getScoreColorFn(overall)('█'.repeat(filled)) + colors.gray('░'.repeat(barWidth - filled));
+  const bar = renderScoreBar(overall, 30, false);
   printBox([
     '',
     `  ${colors.gray('Score')}  ${formatScore(overall)}${colors.gray('/100')}`,

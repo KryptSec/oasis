@@ -435,12 +435,15 @@ export interface AnalyzeOptions {
 export function resolveDefaultAnalyzerModel(analyzerProvider: string, benchmarkResult: RunResult): string {
   if (isAnthropicProvider(analyzerProvider)) return DEFAULT_ANALYZER_MODEL;
 
-  // If the analyzer runs on the same provider as the benchmark, use the benchmark model —
-  // it's the one we know is available (preset lists are hardcoded examples, not the user's actual models).
+  // Local providers (Ollama): always use the benchmark model.
+  // Preset model lists are hardcoded examples — we can't know what's actually installed.
+  if (analyzerProvider === 'ollama') {
+    return benchmarkResult.modelVersion || benchmarkResult.model || DEFAULT_ANALYZER_MODEL;
+  }
+
   const preset = resolveProvider(analyzerProvider);
 
-  // If the analyzer runs on the same provider as the benchmark, use the benchmark model —
-  // it's the one we know is available (preset lists are hardcoded examples, not the user's actual models).
+  // Same provider as benchmark — use the benchmark model since we know it's available
   const benchmarkProvider = resolveProviderName(benchmarkResult.model);
   if (benchmarkProvider === resolveProviderName(analyzerProvider)) {
     return benchmarkResult.modelVersion || preset?.models[0] || DEFAULT_ANALYZER_MODEL;

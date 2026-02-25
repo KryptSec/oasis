@@ -61,16 +61,33 @@ export function getRetryDelayMs(attempt: number, error: unknown): number {
   return RATE_LIMIT_BASE_DELAY_MS * Math.pow(2, attempt);
 }
 
+export const DEFAULT_API_TIMEOUT_MS = 120_000; // 2 minutes
+
+export class ApiTimeoutError extends Error {
+  constructor(context: string, timeoutMs: number) {
+    super(`${context}: timed out after ${timeoutMs / 1000}s`);
+    this.name = 'ApiTimeoutError';
+  }
+}
+
 export async function withRateLimitRetry<T>(
   fn: () => Promise<T>,
   context: string,
   verbose = false,
+  timeoutMs = DEFAULT_API_TIMEOUT_MS,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
     try {
-      return await fn();
+      const result = await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new ApiTimeoutError(context, timeoutMs)), timeoutMs)
+        ),
+      ]);
+      return result;
     } catch (error) {
+      if (error instanceof ApiTimeoutError) throw error;
       lastError = error;
       const status = getErrorStatus(error);
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, openSync, writeSync, closeSync, constants } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 
@@ -137,8 +137,12 @@ export function loadCredentials(): OasisCredentials {
 
 function saveCredentials(credentials: OasisCredentials): void {
   ensureConfigDir();
-  writeFileSync(CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), { mode: 0o600 });
-  // Ensure permissions are correct even if file existed
+  const data = JSON.stringify(credentials, null, 2);
+  // Open with explicit mode — O_CREAT|O_WRONLY|O_TRUNC sets 0o600 atomically on creation,
+  // and the chmodSync after handles pre-existing files that may have wrong permissions.
+  const fd = openSync(CREDENTIALS_FILE, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 0o600);
+  writeSync(fd, data);
+  closeSync(fd);
   chmodSync(CREDENTIALS_FILE, 0o600);
 }
 
