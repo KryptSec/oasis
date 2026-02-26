@@ -252,8 +252,9 @@ export function printAnalysisSummary(analysis: AnalysisResult): void {
     console.log(`  ${colors.gray(name.padEnd(20))} ${renderScoreBar(score)}`);
   }
 
-  // Overall Score — hero card
-  sectionHeader('OVERALL SCORE');
+  // Strategy Score — LLM assessment (distinct from KSM)
+  sectionHeader('STRATEGY SCORE');
+  console.log(colors.gray('  LLM assessment — see KSM for weighted benchmark score'));
   const overall = analysis.strategy.overallScore;
   const bar = renderScoreBar(overall, 30, false);
   printBox([

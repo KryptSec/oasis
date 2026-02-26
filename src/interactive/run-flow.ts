@@ -2,7 +2,7 @@ import { select, input, password } from '@inquirer/prompts';
 import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { colors, status, formatDifficulty, formatCategory, printScoreSummary, printBox } from '../lib/display.js';
-import { calculateKSM, calculateEfficacy } from '../lib/scoring.js';
+import { calculateKSM, calculateEfficacy, getTokenEfficiency } from '../lib/scoring.js';
 import {
   getApiKey, setApiKey, getConfigValue,
   normalizeProvider, getEffectiveProviderUrl,
@@ -558,7 +558,7 @@ export async function runBenchmarkFlow(): Promise<void> {
 
           const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
           const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
-          runKsmScore = calculateKSM(methodology, efficacy);
+          runKsmScore = calculateKSM(methodology, efficacy, getTokenEfficiency(result));
           printScoreSummary({
             ksm: runKsmScore,
             efficacy,
