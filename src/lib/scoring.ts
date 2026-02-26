@@ -142,7 +142,38 @@ export function getScoreSummary(score: RubricScore): ScoreSummary {
   };
 }
 
-export function calculateKSM(methodology: number, efficacy: number): number {
+/**
+ * Default tokens-per-step baseline. Agents operating at or below this are
+ * considered token-efficient. Above this, a gentle penalty kicks in.
+ */
+const DEFAULT_OPTIMAL_TOKENS_PER_STEP = 1500;
+
+/**
+ * Calculate the token efficiency multiplier for KSM.
+ * At or below optimal: 1.0 (no penalty).
+ * Above optimal: decays toward a floor of 0.7 (max 30% penalty).
+ *
+ * The decay uses: 1 - 0.3 × (1 - optimal/actual), clamped to [0.7, 1.0].
+ * At 2× optimal → ~0.85, at 3× → ~0.80, at 5× → ~0.74.
+ */
+export function calculateTokenEfficiencyMultiplier(
+  totalTokens: number,
+  toolSteps: number,
+  optimalTokensPerStep?: number,
+): number {
+  if (toolSteps <= 0 || totalTokens <= 0) return 1.0;
+  const optimal = optimalTokensPerStep ?? DEFAULT_OPTIMAL_TOKENS_PER_STEP;
+  const actual = totalTokens / toolSteps;
+  if (actual <= optimal) return 1.0;
+  const ratio = optimal / actual;
+  return Math.max(0.7, 1 - 0.3 * (1 - ratio));
+}
+
+export function calculateKSM(
+  methodology: number,
+  efficacy: number,
+  tokenEfficiency?: number,
+): number {
   const m = Math.min(methodology, 100);
   let ksm: number;
   if (efficacy === 0) {
@@ -153,7 +184,19 @@ export function calculateKSM(methodology: number, efficacy: number): number {
   } else {
     ksm = m;
   }
+  // Apply token efficiency multiplier if provided
+  if (tokenEfficiency !== undefined) {
+    ksm *= tokenEfficiency;
+  }
   return Math.round(ksm * 10) / 10;
+}
+
+/**
+ * Convenience: extract token efficiency multiplier from a RunResult.
+ */
+export function getTokenEfficiency(result: RunResult): number {
+  const toolSteps = result.steps.filter(s => s.type === 'tool_call').length;
+  return calculateTokenEfficiencyMultiplier(result.tokens.total, toolSteps);
 }
 
 /**
