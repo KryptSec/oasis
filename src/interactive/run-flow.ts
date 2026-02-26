@@ -13,6 +13,7 @@ import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.j
 import { analyzeRun } from '../lib/analyzer.js';
 import { ensureDocker, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
 import { printAnalysisSummary } from '../lib/report.js';
+import { promptExport } from '../lib/export.js';
 import { QuotaExceededError } from '../lib/retry.js';
 import { pullAndStartContainers, waitForTarget, cleanup, startFromCompose, stopFromCompose } from '../lib/docker.js';
 import { buildContainerSpec } from '../lib/registry.js';
@@ -524,6 +525,8 @@ export async function runBenchmarkFlow(): Promise<void> {
     ].join('\n'));
 
     // 11. Run analysis
+    let runAnalysisResult: import('../lib/types.js').AnalysisResult | undefined;
+    let runKsmScore: number | undefined;
     if (runAnalysis) {
       const analyzerProvider = normalizeProvider(provider);
       const analyzerApiKey = getApiKey(analyzerProvider) || resolvedApiKey;
@@ -547,6 +550,7 @@ export async function runBenchmarkFlow(): Promise<void> {
             challengeConfig,
           });
 
+          runAnalysisResult = analysis;
           const { jsonPath: analysisPath } = saveAnalysisResult(result.id, analysis, getResultsDir());
           spinnerAnalysis.succeed('Analysis complete');
 
@@ -554,8 +558,9 @@ export async function runBenchmarkFlow(): Promise<void> {
 
           const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
           const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
+          runKsmScore = calculateKSM(methodology, efficacy);
           printScoreSummary({
-            ksm: calculateKSM(methodology, efficacy),
+            ksm: runKsmScore,
             efficacy,
             efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
             time: result.totalTime,
@@ -580,6 +585,9 @@ export async function runBenchmarkFlow(): Promise<void> {
         `  ${colors.gray('Time')}  ${colors.yellow(result.totalTime.toFixed(1) + 's')}     ${colors.gray('Steps')}  ${colors.yellow(result.iterations.toString())}     ${colors.gray('Tokens')}  ${colors.cyan(result.tokens.total.toLocaleString())}`,
       );
     }
+
+    // 12. Offer export
+    await promptExport(result, runAnalysisResult, runKsmScore);
 
     console.log();
   } catch (error) {

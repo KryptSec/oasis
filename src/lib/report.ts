@@ -2,8 +2,28 @@
 // Supports terminal (colored), text, JSON, and markdown output formats
 
 import Table from 'cli-table3';
+import { execSync } from 'child_process';
 import type { RunResult, AttackTechnique, AnalysisResult } from './types.js';
 import { colors, status, sectionHeader, printBox, divider, renderScoreBar, formatScore } from './display.js';
+
+export function copyToClipboard(text: string): boolean {
+  try {
+    if (process.platform === 'darwin') {
+      execSync('pbcopy', { input: text });
+    } else if (process.platform === 'win32') {
+      execSync('clip', { input: text });
+    } else {
+      try {
+        execSync('xclip -selection clipboard', { input: text });
+      } catch {
+        execSync('xsel --clipboard --input', { input: text });
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // MITRE ATT&CK Tactic icons
 const TACTIC_ICONS: Record<string, string> = {

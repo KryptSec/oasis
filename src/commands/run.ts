@@ -390,6 +390,8 @@ export const runCommand = new Command('run')
       }
 
       console.log();
+      console.log(colors.gray(`  Export: oasis report ${result.id} -f [json|md|html|share] [--clipboard]`));
+      console.log();
 
     } catch (error) {
       spinnerRun.fail('Benchmark failed');
