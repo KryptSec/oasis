@@ -552,7 +552,12 @@ export async function runBenchmarkFlow(): Promise<void> {
 
           runAnalysisResult = analysis;
           const { jsonPath: analysisPath } = saveAnalysisResult(result.id, analysis, getResultsDir());
-          spinnerAnalysis.succeed('Analysis complete');
+
+          if (analysis.parseFailed) {
+            spinnerAnalysis.warn('Analysis failed — could not parse LLM response (truncated or malformed JSON). Retry with: oasis analyze ' + result.id);
+          } else {
+            spinnerAnalysis.succeed('Analysis complete');
+          }
 
           printAnalysisSummary(analysis);
 

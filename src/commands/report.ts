@@ -5,6 +5,7 @@ import { colors, status } from '../lib/display.js';
 import { getResultsDir } from '../lib/config.js';
 import { calculateKSM, calculateEfficacyFromResults, getTokenEfficiency } from '../lib/scoring.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
+import { loadAnalysisResult } from '../lib/runner.js';
 import {
   copyToClipboard,
   printColorReport,
@@ -74,13 +75,8 @@ export const reportCommand = new Command('report')
       process.exit(1);
     }
 
-    // Load analysis if available
-    let analysis: AnalysisResult | undefined;
-    if (existsSync(analysisPath)) {
-      try {
-        analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-      } catch {}
-    }
+    // Load analysis if available (null if parse failed)
+    const analysis = loadAnalysisResult(analysisPath) ?? undefined;
 
     const format = options.format.toLowerCase();
     let output = '';

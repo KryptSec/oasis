@@ -153,7 +153,12 @@ export const analyzeCommand = new Command('analyze')
         });
 
         saveAnalysisResult(id, analysis, getResultsDir());
-        spinner.succeed(`Analysis complete for ${id}`);
+
+        if (analysis.parseFailed) {
+          spinner.warn(`Analysis failed for ${id} — could not parse LLM response (truncated or malformed JSON)`);
+        } else {
+          spinner.succeed(`Analysis complete for ${id}`);
+        }
 
         // Print summary for single runs
         if (runIds.length === 1) {

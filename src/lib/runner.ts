@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { execFileSync } from 'child_process';
 import chalk from 'chalk';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
 import { wasSuccessful, classifyToAttack, classifyCommand } from './classifier.js';
@@ -796,4 +796,19 @@ export function saveAnalysisResult(
   const txtPath = resolve(resultsDir, `${runId}.analysis.txt`);
 
   return { jsonPath, txtPath };
+}
+
+/**
+ * Load an analysis result from disk. Returns null if the file doesn't exist,
+ * can't be parsed, or the analysis itself failed (parseFailed).
+ */
+export function loadAnalysisResult(analysisPath: string): AnalysisResult | null {
+  if (!existsSync(analysisPath)) return null;
+  try {
+    const analysis: AnalysisResult = JSON.parse(readFileSync(analysisPath, 'utf-8'));
+    if (analysis.parseFailed) return null;
+    return analysis;
+  } catch {
+    return null;
+  }
 }
