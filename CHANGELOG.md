@@ -4,6 +4,28 @@ All notable changes to OASIS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.5] - 2026-02-26
+
+### Added
+
+- KSM now includes token efficiency as a third scoring factor — models that burn excessive tokens get penalized up to 30% (#47, #50)
+- Interactive export prompt after benchmark runs — copy share card or save HTML report (#48, #51)
+- `Share / export` option in results browser detail menu
+
+### Fixed
+
+- Anthropic token undercount: `input_tokens` excludes cached tokens, now sums all three fields (#44, #45)
+- Score label disambiguation: "Overall Score" → "Strategy Score" for LLM assessment, "Score" → "KSM" in table headers (#46, #49)
+- Remaining label inconsistencies in markdown, text, and terminal analysis output (#54)
+- Export prompt: `writeFileSync` crash on permission errors, unreachable no-analysis path, Ctrl+C mishandled (#55)
+- curl stderr leaking to terminal during benchmark runs (#52, #53)
+- Formula explainer now accurately describes KSM calculation
+
+### Changed
+
+- Updated KSM-SCORING.md and README.md to document token efficiency factor
+- 363 tests passing (was 346)
+
 ## [0.1.4] - 2026-02-27
 
 ### Security
