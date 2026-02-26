@@ -1,6 +1,7 @@
 import { select } from '@inquirer/prompts';
 import { colors, status, formatScore, formatTime, printBox } from '../lib/display.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
+import { promptExport } from '../lib/export.js';
 import { loadRecentResults } from './helpers.js';
 import type { LoadedResult } from './helpers.js';
 
@@ -71,6 +72,7 @@ async function showRunDetail(entry: LoadedResult): Promise<void> {
   const detailChoices = [
     ...(analysis ? [{ name: 'View analysis summary', value: 'analysis' as const }] : []),
     { name: 'View detailed report', value: 'report' as const },
+    { name: 'Share / export', value: 'export' as const },
     { name: 'Back to results list', value: 'back' as const },
   ];
 
@@ -87,6 +89,9 @@ async function showRunDetail(entry: LoadedResult): Promise<void> {
       break;
     case 'report':
       printColorReport(result);
+      break;
+    case 'export':
+      await promptExport(result, analysis ?? undefined, entry.score > 0 ? entry.score : undefined);
       break;
     case 'back':
       break;

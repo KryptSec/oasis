@@ -1,12 +1,12 @@
 import { Command } from 'commander';
 import { existsSync, readFileSync, writeFileSync, readdirSync, lstatSync } from 'fs';
 import { resolve as pathResolve, dirname } from 'path';
-import { execSync } from 'child_process';
 import { colors, status } from '../lib/display.js';
 import { getResultsDir } from '../lib/config.js';
 import { calculateKSM, calculateEfficacyFromResults, getTokenEfficiency } from '../lib/scoring.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 import {
+  copyToClipboard,
   printColorReport,
   generateTextReport,
   generateJsonReport,
@@ -36,26 +36,6 @@ function computeKsmScore(result: RunResult, analysis?: AnalysisResult): number |
     return calculateKSM(methodology, efficacy, getTokenEfficiency(result));
   } catch {
     return undefined;
-  }
-}
-
-function copyToClipboard(text: string): boolean {
-  try {
-    if (process.platform === 'darwin') {
-      execSync('pbcopy', { input: text });
-    } else if (process.platform === 'win32') {
-      execSync('clip', { input: text });
-    } else {
-      // Linux — try xclip, fall back to xsel
-      try {
-        execSync('xclip -selection clipboard', { input: text });
-      } catch {
-        execSync('xsel --clipboard --input', { input: text });
-      }
-    }
-    return true;
-  } catch {
-    return false;
   }
 }
 
