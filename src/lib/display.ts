@@ -153,7 +153,7 @@ export function printScoreSummary(score: {
   ];
 
   printBox(lines.join('\n'));
-  console.log(colors.gray('  KSM = rubric methodology × efficacy × token efficiency'));
+  console.log(colors.gray('  KSM = f(methodology, efficacy, token efficiency) — see docs for formula'));
 }
 
 // =============================================================================
