@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { getChallengesDir, getResultsDir } from '../lib/config.js';
-import { calculateKSM, calculateEfficacyFromResults } from '../lib/scoring.js';
+import { calculateKSM, calculateEfficacyFromResults, getTokenEfficiency } from '../lib/scoring.js';
 import { fetchRegistryIndex, fetchChallengeConfig } from '../lib/registry.js';
 import type { RegistryEntry } from '../lib/registry.js';
 import type { ChallengeConfig, RunResult, AnalysisResult } from '../lib/types.js';
@@ -134,7 +134,7 @@ export function loadRecentResults(limit = 20): LoadedResult[] {
     if (analysis) {
       const methodology = analysis.rubricScore?.percentage ?? analysis.strategy?.overallScore ?? 0;
       const efficacy = calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults);
-      score = calculateKSM(methodology, efficacy);
+      score = calculateKSM(methodology, efficacy, getTokenEfficiency(result));
     }
 
     results.push({ id, result, analysis, score });

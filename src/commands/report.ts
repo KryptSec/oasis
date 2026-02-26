@@ -4,7 +4,7 @@ import { resolve as pathResolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { colors, status } from '../lib/display.js';
 import { getResultsDir } from '../lib/config.js';
-import { calculateKSM, calculateEfficacyFromResults } from '../lib/scoring.js';
+import { calculateKSM, calculateEfficacyFromResults, getTokenEfficiency } from '../lib/scoring.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
 import {
   printColorReport,
@@ -33,7 +33,7 @@ function computeKsmScore(result: RunResult, analysis?: AnalysisResult): number |
       }
     }
     const efficacy = calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults);
-    return calculateKSM(methodology, efficacy);
+    return calculateKSM(methodology, efficacy, getTokenEfficiency(result));
   } catch {
     return undefined;
   }
