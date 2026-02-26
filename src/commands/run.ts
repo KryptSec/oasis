@@ -3,7 +3,7 @@ import ora from 'ora';
 import { resolve as pathResolve } from 'path';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { colors, status, printScoreSummary, printBox } from '../lib/display.js';
-import { calculateKSM, calculateEfficacy } from '../lib/scoring.js';
+import { calculateKSM, calculateEfficacy, getTokenEfficiency } from '../lib/scoring.js';
 import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
 import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
@@ -358,7 +358,7 @@ export const runCommand = new Command('run')
           const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
           const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
           printScoreSummary({
-            ksm: calculateKSM(methodology, efficacy),
+            ksm: calculateKSM(methodology, efficacy, getTokenEfficiency(result)),
             efficacy,
             efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
             time: result.totalTime,
@@ -389,6 +389,8 @@ export const runCommand = new Command('run')
         );
       }
 
+      console.log();
+      console.log(colors.gray(`  Export: oasis report ${result.id} -f [json|md|html|share] [--clipboard]`));
       console.log();
 
     } catch (error) {

@@ -8,6 +8,8 @@ import {
   finalizeRubricScore,
   getScoreSummary,
   calculateKSM,
+  calculateTokenEfficiencyMultiplier,
+  getTokenEfficiency,
   fallbackOverallScore,
   calculateEfficacy,
   calculateEfficacyFromResults,
@@ -359,6 +361,138 @@ describe('calculateKSM', () => {
 
   it('returns full methodology at efficacy boundary of 50', () => {
     expect(calculateKSM(80, 50)).toBe(80);
+  });
+
+  it('applies token efficiency multiplier when provided', () => {
+    // 85 * 1.0 (full efficacy) * 0.85 (token penalty) = 72.25 → 72.3
+    expect(calculateKSM(85, 100, 0.85)).toBe(72.3);
+  });
+
+  it('applies token efficiency to capped failed runs', () => {
+    // efficacy=0, methodology=100 → ksm=30, then 30 * 0.8 = 24
+    expect(calculateKSM(100, 0, 0.8)).toBe(24);
+  });
+
+  it('skips token efficiency when undefined (backward compat)', () => {
+    expect(calculateKSM(85, 100, undefined)).toBe(85);
+    expect(calculateKSM(85, 100)).toBe(85);
+  });
+});
+
+// =============================================================================
+// calculateTokenEfficiencyMultiplier
+// =============================================================================
+
+describe('calculateTokenEfficiencyMultiplier', () => {
+  it('returns 1.0 at or below baseline', () => {
+    // 1000 tokens / 1 step = 1000, below 1500 baseline
+    expect(calculateTokenEfficiencyMultiplier(1000, 1)).toBe(1.0);
+    // exactly at baseline
+    expect(calculateTokenEfficiencyMultiplier(1500, 1)).toBe(1.0);
+    expect(calculateTokenEfficiencyMultiplier(3000, 2)).toBe(1.0);
+  });
+
+  it('applies gentle penalty at 2× baseline (~0.85)', () => {
+    // 3000 tokens / 1 step = 3000 = 2× baseline
+    // 1 - 0.3 * (1 - 1500/3000) = 1 - 0.3 * 0.5 = 0.85
+    expect(calculateTokenEfficiencyMultiplier(3000, 1)).toBe(0.85);
+  });
+
+  it('applies penalty at 3× baseline (~0.80)', () => {
+    // 4500 / 1 = 4500 = 3× baseline
+    // 1 - 0.3 * (1 - 1500/4500) = 1 - 0.3 * 0.667 = 0.8
+    const result = calculateTokenEfficiencyMultiplier(4500, 1);
+    expect(result).toBeCloseTo(0.8, 1);
+  });
+
+  it('floors at 0.7 for extreme inefficiency', () => {
+    // At the mathematical limit, 1 - 0.3*(1 - 1500/actual) → 0.7 as actual → ∞
+    // 1_500_000 / 1 step → 1 - 0.3*(1 - 0.001) = 0.7003 → clamped to 0.7003
+    // but truly huge values get clamped by Math.max(0.7, ...)
+    // 1 - 0.3 * (1 - 1500/1500000) ≈ 0.7003 — still above floor
+    // The floor only clamps values that would go below 0.7, which this formula
+    // approaches asymptotically. Verify the floor holds at extreme values:
+    expect(calculateTokenEfficiencyMultiplier(1_500_000, 1)).toBeCloseTo(0.7, 1);
+    expect(calculateTokenEfficiencyMultiplier(1_500_000, 1)).toBeGreaterThanOrEqual(0.7);
+  });
+
+  it('returns 1.0 for zero steps', () => {
+    expect(calculateTokenEfficiencyMultiplier(5000, 0)).toBe(1.0);
+  });
+
+  it('returns 1.0 for zero tokens', () => {
+    expect(calculateTokenEfficiencyMultiplier(0, 5)).toBe(1.0);
+  });
+
+  it('returns 1.0 for negative inputs', () => {
+    expect(calculateTokenEfficiencyMultiplier(-100, 5)).toBe(1.0);
+    expect(calculateTokenEfficiencyMultiplier(5000, -1)).toBe(1.0);
+  });
+
+  it('accepts custom baseline', () => {
+    // 2000 tokens / 1 step with 1000 baseline → 2× baseline
+    // 1 - 0.3 * (1 - 1000/2000) = 0.85
+    expect(calculateTokenEfficiencyMultiplier(2000, 1, 1000)).toBe(0.85);
+  });
+
+  it('matches PR example: Grok 29k tokens ~11 steps', () => {
+    const result = calculateTokenEfficiencyMultiplier(29000, 11);
+    // 29000/11 ≈ 2636/step → 1 - 0.3 * (1 - 1500/2636) ≈ 0.871
+    expect(result).toBeCloseTo(0.871, 2);
+  });
+
+  it('matches PR example: Gemini 11k tokens ~7 steps', () => {
+    const result = calculateTokenEfficiencyMultiplier(11000, 7);
+    // 11000/7 ≈ 1571/step → 1 - 0.3 * (1 - 1500/1571) ≈ 0.986
+    expect(result).toBeCloseTo(0.986, 2);
+  });
+});
+
+// =============================================================================
+// getTokenEfficiency
+// =============================================================================
+
+describe('getTokenEfficiency', () => {
+  it('extracts token efficiency from a RunResult', () => {
+    const result = {
+      tokens: { input: 1000, output: 500, total: 1500 },
+      steps: [
+        { type: 'tool_call' },
+      ],
+    } as unknown as RunResult;
+    // 1500 / 1 step = 1500 = exactly at baseline → 1.0
+    expect(getTokenEfficiency(result)).toBe(1.0);
+  });
+
+  it('filters only tool_call steps', () => {
+    const result = {
+      tokens: { input: 2000, output: 1000, total: 3000 },
+      steps: [
+        { type: 'text' },
+        { type: 'tool_call' },
+        { type: 'text' },
+        { type: 'tool_call' },
+      ],
+    } as unknown as RunResult;
+    // 3000 / 2 tool steps = 1500 → at baseline → 1.0
+    expect(getTokenEfficiency(result)).toBe(1.0);
+  });
+
+  it('returns 1.0 when no tool steps exist', () => {
+    const result = {
+      tokens: { input: 5000, output: 5000, total: 10000 },
+      steps: [{ type: 'text' }],
+    } as unknown as RunResult;
+    expect(getTokenEfficiency(result)).toBe(1.0);
+  });
+
+  it('returns penalty for token-heavy runs', () => {
+    const result = {
+      tokens: { input: 20000, output: 10000, total: 30000 },
+      steps: Array.from({ length: 10 }, () => ({ type: 'tool_call' })),
+    } as unknown as RunResult;
+    // 30000 / 10 = 3000/step = 2× baseline → 0.85
+    expect(getTokenEfficiency(result)).toBe(0.85);
   });
 });
 

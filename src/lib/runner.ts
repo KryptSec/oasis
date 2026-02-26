@@ -381,7 +381,9 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
         break;
       }
 
-      const stepInputTokens = response.usage.input_tokens;
+      const stepInputTokens = response.usage.input_tokens
+        + (response.usage.cache_creation_input_tokens ?? 0)
+        + (response.usage.cache_read_input_tokens ?? 0);
       const stepOutputTokens = response.usage.output_tokens;
       totalTokens.input += stepInputTokens;
       totalTokens.output += stepOutputTokens;
