@@ -41,7 +41,7 @@ resultsCommand
 
     sectionHeader('Benchmark Results');
     const table = new Table({
-      head: ['ID', 'Challenge', 'Model', 'Result', 'Time', 'Score'],
+      head: ['ID', 'Challenge', 'Model', 'Result', 'Time', 'KSM'],
       style: { head: ['cyan'], border: ['gray'] },
     });
 
@@ -243,7 +243,7 @@ resultsCommand
 
       const s1 = calculateKSM(a1?.rubricScore?.percentage ?? a1?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r1.challenge, r1.modelVersion, allResults));
       const s2 = calculateKSM(a2?.rubricScore?.percentage ?? a2?.strategy?.overallScore ?? 0, calculateEfficacyFromResults(r2.challenge, r2.modelVersion, allResults));
-      rows.push(['Score', s1 ? s1.toString() : 'N/A', s2 ? s2.toString() : 'N/A']);
+      rows.push(['KSM', s1 ? s1.toString() : 'N/A', s2 ? s2.toString() : 'N/A']);
       rows.push(['Approach', a1?.behavior?.approach || 'N/A', a2?.behavior?.approach || 'N/A']);
     }
 
