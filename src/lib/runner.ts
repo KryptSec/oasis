@@ -163,6 +163,7 @@ function executeCommand(command: string, containerName: string, verbose: boolean
       encoding: 'utf8',
       timeout: 60000,
       maxBuffer: 10 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     const output = result.trim();
     if (verbose) {
