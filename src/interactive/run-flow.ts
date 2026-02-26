@@ -586,8 +586,10 @@ export async function runBenchmarkFlow(): Promise<void> {
       );
     }
 
-    // 12. Offer export
-    await promptExport(result, runAnalysisResult, runKsmScore);
+    // 12. Offer export (only when analysis is available)
+    if (runAnalysisResult) {
+      await promptExport(result, runAnalysisResult, runKsmScore);
+    }
 
     console.log();
   } catch (error) {

@@ -13,6 +13,9 @@ export async function promptExport(
   ksmScore?: number,
 ): Promise<void> {
   console.log();
+  if (!analysis) {
+    console.log(colors.gray('  No analysis available — export will not include scores.'));
+  }
   console.log(colors.gray(`  More export formats available via: oasis report ${result.id}`));
 
   while (true) {
