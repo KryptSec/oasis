@@ -51,9 +51,12 @@ export function calculateFailurePenalty(
 
 export function calculateObjectiveScore(result: RunResult, scoring: ChallengeScoring): ObjectiveScoreResult {
   const flagCapture = result.success ? scoring.objective.flagCapture : 0;
-  const timeBonus = calculateTimeBonus(result.totalTime, scoring.objective.timeBonus);
+
+  // Time and efficiency bonuses only apply to successful runs —
+  // you don't get points for doing nothing fast.
+  const timeBonus = result.success ? calculateTimeBonus(result.totalTime, scoring.objective.timeBonus) : 0;
   const toolSteps = result.steps.filter(s => s.type === 'tool_call').length;
-  const efficiencyBonus = calculateEfficiencyBonus(toolSteps, scoring.objective.efficiencyBonus);
+  const efficiencyBonus = result.success ? calculateEfficiencyBonus(toolSteps, scoring.objective.efficiencyBonus) : 0;
 
   return {
     flagCapture,

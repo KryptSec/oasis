@@ -188,6 +188,9 @@ describe('calculateObjectiveScore', () => {
     } as unknown as RunResult;
     const score = calculateObjectiveScore(result, scoring);
     expect(score.flagCapture).toBe(0);
+    expect(score.timeBonus).toBe(0);
+    expect(score.efficiencyBonus).toBe(0);
+    expect(score.subtotal).toBe(0);
   });
 
   it('includes time bonus and efficiency bonus', () => {
