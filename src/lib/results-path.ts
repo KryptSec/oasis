@@ -1,23 +1,24 @@
 import { isAbsolute, relative as pathRelative, resolve as pathResolve } from 'path';
 import { getResultsDir } from './config.js';
+import { ValidationError } from './errors.js';
 
 const RUN_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-export class InvalidRunIdError extends Error {
+export class InvalidRunIdError extends ValidationError {
   readonly runId: string;
 
   constructor(runId: string) {
-    super(`Invalid run ID: ${runId}`);
+    super(`Invalid run ID: ${runId}`, { runId });
     this.name = 'InvalidRunIdError';
     this.runId = runId;
   }
 }
 
-export class ResultPathEscapeError extends Error {
+export class ResultPathEscapeError extends ValidationError {
   readonly runId: string;
 
   constructor(runId: string) {
-    super(`Run ID resolves outside results directory: ${runId}`);
+    super(`Run ID resolves outside results directory: ${runId}`, { runId });
     this.name = 'ResultPathEscapeError';
     this.runId = runId;
   }

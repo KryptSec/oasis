@@ -19,15 +19,18 @@ import {
   finalizeRubricScore,
   fallbackOverallScore,
 } from './scoring.js';
+import { AnalysisResponseSchema } from './schemas.js';
+import { MAX_COMPLETION_TOKENS, ANALYZER_OUTPUT_LIMIT } from './constants.js';
 import { withRateLimitRetry } from './retry.js';
-import { isAnthropicProvider, resolveProvider, resolveProviderName } from './providers.js';
+import { isAnthropicProvider, resolveProvider } from './providers.js';
+import { normalizeProvider } from './config.js';
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
 const DEFAULT_ANALYZER_MODEL = 'claude-sonnet-4-5-20250929';
-const MAX_OUTPUT_PER_STEP = 500;
+const MAX_OUTPUT_PER_STEP = ANALYZER_OUTPUT_LIMIT;
 
 // =============================================================================
 // System Prompt
@@ -229,7 +232,7 @@ Return ONLY the JSON object, no other text.`;
 // Response Parser
 // =============================================================================
 
-async function parseAnalysisResponse(
+export async function parseAnalysisResponse(
   response: string,
   runId: string,
   result: RunResult,
@@ -243,39 +246,41 @@ async function parseAnalysisResponse(
   jsonStr = jsonStr.trim();
 
   try {
-    const parsed = JSON.parse(jsonStr);
+    const parsed = AnalysisResponseSchema.parse(JSON.parse(jsonStr));
 
     const analysisResult: AnalysisResult = {
       runId,
       analyzedAt: new Date(),
       analyzerModel: DEFAULT_ANALYZER_MODEL,
       attackChain: {
-        phases: parsed.attackChain?.phases || [],
-        techniques: parsed.attackChain?.techniques || [],
-        killChainCoverage: parsed.attackChain?.killChainCoverage || [],
+        phases: parsed.attackChain.phases,
+        techniques: parsed.attackChain.techniques,
+        killChainCoverage: parsed.attackChain.killChainCoverage,
       },
       narrative: {
-        summary: parsed.narrative?.summary || 'Analysis unavailable',
-        detailed: parsed.narrative?.detailed || '',
-        keyFindings: parsed.narrative?.keyFindings || [],
+        summary: parsed.narrative.summary,
+        detailed: parsed.narrative.detailed,
+        keyFindings: parsed.narrative.keyFindings,
       },
       behavior: {
-        approach: parsed.behavior?.approach || 'exploratory',
-        approachDescription: parsed.behavior?.approachDescription || '',
-        strengths: parsed.behavior?.strengths || [],
-        inefficiencies: parsed.behavior?.inefficiencies || [],
-        decisionQuality: parsed.behavior?.decisionQuality || 0,
+        approach: (['methodical', 'aggressive', 'exploratory', 'targeted'].includes(parsed.behavior.approach)
+          ? parsed.behavior.approach as 'methodical' | 'aggressive' | 'exploratory' | 'targeted'
+          : 'exploratory'),
+        approachDescription: parsed.behavior.approachDescription,
+        strengths: parsed.behavior.strengths,
+        inefficiencies: parsed.behavior.inefficiencies,
+        decisionQuality: parsed.behavior.decisionQuality,
       },
       strategy: {
-        reconQuality: parsed.strategy?.reconQuality ?? 0,
-        exploitEfficiency: parsed.strategy?.exploitEfficiency ?? 0,
-        adaptability: parsed.strategy?.adaptability ?? 0,
-        overallScore: parsed.strategy?.overallScore || fallbackOverallScore(
-          parsed.strategy?.reconQuality ?? 0,
-          parsed.strategy?.exploitEfficiency ?? 0,
-          parsed.strategy?.adaptability ?? 0,
+        reconQuality: parsed.strategy.reconQuality,
+        exploitEfficiency: parsed.strategy.exploitEfficiency,
+        adaptability: parsed.strategy.adaptability,
+        overallScore: parsed.strategy.overallScore ?? fallbackOverallScore(
+          parsed.strategy.reconQuality,
+          parsed.strategy.exploitEfficiency,
+          parsed.strategy.adaptability,
         ),
-        scoreBreakdown: parsed.strategy?.scoreBreakdown ?? '',
+        scoreBreakdown: parsed.strategy.scoreBreakdown,
       },
     };
 
@@ -393,17 +398,17 @@ function buildRubricScore(
     milestones: { results: milestoneResults, achieved: [], points: 0 },
     qualitative: {
       reconQuality: {
-        score: Math.min(llmEval.qualitative?.reconQuality?.score || 0, scoring.qualitative.reconQuality.maxPoints),
+        score: Math.min(llmEval.qualitative?.reconQuality?.score ?? 0, scoring.qualitative.reconQuality.maxPoints),
         maxPoints: scoring.qualitative.reconQuality.maxPoints,
         reasoning: llmEval.qualitative?.reconQuality?.reasoning || '',
       },
       techniqueSelection: {
-        score: Math.min(llmEval.qualitative?.techniqueSelection?.score || 0, scoring.qualitative.techniqueSelection.maxPoints),
+        score: Math.min(llmEval.qualitative?.techniqueSelection?.score ?? 0, scoring.qualitative.techniqueSelection.maxPoints),
         maxPoints: scoring.qualitative.techniqueSelection.maxPoints,
         reasoning: llmEval.qualitative?.techniqueSelection?.reasoning || '',
       },
       adaptability: {
-        score: Math.min(llmEval.qualitative?.adaptability?.score || 0, scoring.qualitative.adaptability.maxPoints),
+        score: Math.min(llmEval.qualitative?.adaptability?.score ?? 0, scoring.qualitative.adaptability.maxPoints),
         maxPoints: scoring.qualitative.adaptability.maxPoints,
         reasoning: llmEval.qualitative?.adaptability?.reasoning || '',
       },
@@ -443,8 +448,8 @@ export function resolveDefaultAnalyzerModel(analyzerProvider: string, benchmarkR
   const preset = resolveProvider(analyzerProvider);
 
   // Same provider as benchmark — use the benchmark model since we know it's available
-  const benchmarkProvider = resolveProviderName(benchmarkResult.model);
-  if (benchmarkProvider === resolveProviderName(analyzerProvider)) {
+  const benchmarkProvider = normalizeProvider(benchmarkResult.model);
+  if (benchmarkProvider === normalizeProvider(analyzerProvider)) {
     return benchmarkResult.modelVersion || preset?.models[0] || DEFAULT_ANALYZER_MODEL;
   }
 
@@ -459,7 +464,7 @@ async function callAnthropicAnalyzer(
   const response = await withRateLimitRetry(
     () => client.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: MAX_COMPLETION_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -480,7 +485,7 @@ async function callOpenAIAnalyzer(
   const response = await withRateLimitRetry(
     () => client.chat.completions.create({
       model,
-      max_completion_tokens: 4096,
+      max_completion_tokens: MAX_COMPLETION_TOKENS,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: prompt },

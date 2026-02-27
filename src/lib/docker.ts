@@ -5,6 +5,8 @@
  */
 
 import { execSync } from 'child_process';
+import { shellEscape } from './shell.js';
+import { DOCKER_WAIT_TIMEOUT, DOCKER_POLL_INTERVAL } from './constants.js';
 
 export interface ContainerSpec {
   challengeId: string;
@@ -13,11 +15,6 @@ export interface ContainerSpec {
   network: string;
   kaliContainerName: string;
   targetContainerName: string;
-}
-
-/** Escape a string for safe inclusion in a shell command (single-quote wrapping). */
-function shellEscape(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 /**
@@ -36,8 +33,9 @@ export function pullImage(image: string, onProgress?: (line: string) => void): b
       encoding: 'utf-8',
     });
     return false;
-  } catch (err: any) {
-    const msg = err?.stderr || err?.message || '';
+  } catch (err: unknown) {
+    const eObj = err != null && typeof err === 'object' ? err as Record<string, unknown> : {};
+    const msg = String(eObj.stderr || eObj.message || '');
     if (!msg.includes('no matching manifest') && !msg.includes('no match for platform')) {
       throw err;
     }
@@ -133,10 +131,10 @@ export function pullAndStartContainers(
 export function waitForTarget(
   kaliContainer: string,
   targetUrl: string,
-  timeoutMs = 30000
+  timeoutMs = DOCKER_WAIT_TIMEOUT
 ): void {
   const start = Date.now();
-  const pollInterval = 2000;
+  const pollInterval = DOCKER_POLL_INTERVAL;
 
   while (Date.now() - start < timeoutMs) {
     try {
