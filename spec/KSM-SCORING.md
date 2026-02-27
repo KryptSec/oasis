@@ -174,9 +174,9 @@ KSM = 95 * 0.979 = 93.0
 Model: Grok 3
 Success: Yes (100% efficacy)
 Methodology Score: 97
-Tokens: 29k total, 2698/step → efficiency = 0.871
+Tokens: 29k total, 2698/step → efficiency = 0.867
 
-KSM = 97 * 0.871 = 84.5
+KSM = 97 * 0.867 = 84.1
 ```
 Same challenge, same success rate, but the model that costs less scores higher.
 
