@@ -245,7 +245,7 @@ export const runCommand = new Command('run')
       ? normalizeProvider(options.analyzerProvider || provider)
       : '';
     const analyzerApiKey = analyze
-      ? (options.analyzerKey || getApiKey(analyzerProvider) || resolvedApiKey)
+      ? (options.analyzerKey || getApiKey(analyzerProvider) || (normalizeProvider(provider) === analyzerProvider ? resolvedApiKey : undefined))
       : undefined;
     const analyzerBaseUrl = analyze
       ? (options.analyzerUrl || getEffectiveProviderUrl(analyzerProvider) || undefined)

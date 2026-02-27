@@ -144,6 +144,21 @@ describe('resolveDefaultAnalyzerModel', () => {
     expect(resolveDefaultAnalyzerModel('xai', result)).toBe('grok-3-latest');
   });
 
+  it('filters out image models — falls back to preset default', () => {
+    const result = makeRunResult('xai', 'grok-imagine-image');
+    expect(resolveDefaultAnalyzerModel('xai', result)).toBe('grok-4-0709');
+  });
+
+  it('filters out embedding models — falls back to preset default', () => {
+    const result = makeRunResult('openai', 'text-embedding-3-large');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
+  });
+
+  it('filters out tts models — falls back to preset default', () => {
+    const result = makeRunResult('openai', 'tts-1-hd');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
+  });
+
   it('returns preset default when providers differ', () => {
     const result = makeRunResult('ollama', 'qwen3:30b');
     expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
