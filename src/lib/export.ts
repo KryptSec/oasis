@@ -14,21 +14,31 @@ export async function promptExport(
 ): Promise<void> {
   console.log();
   if (!analysis) {
-    console.log(colors.gray('  No analysis available — export will not include scores.'));
+    console.log(colors.gray('  No analysis available — skipping export.'));
+    console.log(colors.gray(`  Run analysis first: oasis analyze ${result.id}`));
+    console.log(colors.gray(`  Then export via: oasis report ${result.id}`));
+    return;
   }
   console.log(colors.gray(`  More export formats available via: oasis report ${result.id}`));
 
+  let hasActed = false;
   while (true) {
+    const exportChoices = [
+      { name: 'Copy share card to clipboard', value: 'share' as const },
+      { name: 'Save HTML report', value: 'html' as const },
+    ];
+    const doneChoice = { name: hasActed ? 'Done' : colors.gray('Done'), value: 'done' as const };
+    const choices = hasActed
+      ? [doneChoice, ...exportChoices]
+      : [...exportChoices, doneChoice];
+
     const action = await select({
       message: 'Share results?',
-      choices: [
-        { name: 'Copy share card to clipboard', value: 'share' as const },
-        { name: 'Save HTML report', value: 'html' as const },
-        { name: colors.gray('Done'), value: 'done' as const },
-      ],
+      choices,
     });
 
     if (action === 'done') break;
+    hasActed = true;
 
     if (action === 'share') {
       const card = generateShareCard(result, analysis, ksmScore);
