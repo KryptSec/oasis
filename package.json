@@ -1,6 +1,6 @@
 {
   "name": "@kryptsec/oasis",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "OASIS - Open-source AI security benchmarking CLI. Run LLM penetration testing benchmarks with MITRE ATT&CK analysis.",
   "author": "Kryptsec",

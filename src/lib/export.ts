@@ -54,9 +54,13 @@ export async function promptExport(
         continue;
       }
 
-      const html = generateHtmlReport(result, analysis, ksmScore);
-      writeFileSync(resolved, html, { mode: 0o644 });
-      console.log(colors.green(`  ${status.success} Report saved to: ${resolved}`));
+      try {
+        const html = generateHtmlReport(result, analysis, ksmScore);
+        writeFileSync(resolved, html, { mode: 0o644 });
+        console.log(colors.green(`  ${status.success} Report saved to: ${resolved}`));
+      } catch (err) {
+        console.log(colors.red(`  ${status.error} Failed to write: ${err instanceof Error ? err.message : 'Unknown error'}`));
+      }
     }
   }
 }

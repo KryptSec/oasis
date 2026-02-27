@@ -586,9 +586,16 @@ export async function runBenchmarkFlow(): Promise<void> {
       );
     }
 
-    // 12. Offer export (only when analysis is available)
-    if (runAnalysisResult) {
+    // 12. Offer export
+    try {
       await promptExport(result, runAnalysisResult, runKsmScore);
+    } catch (exportErr) {
+      // Ctrl+C during export prompt is not a benchmark failure
+      if (exportErr && typeof exportErr === 'object' && 'name' in exportErr && exportErr.name === 'ExitPromptError') {
+        // User cancelled export — that's fine
+      } else {
+        throw exportErr;
+      }
     }
 
     console.log();

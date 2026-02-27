@@ -259,7 +259,7 @@ export function printAnalysisSummary(analysis: AnalysisResult): void {
   const bar = renderScoreBar(overall, 30, false);
   printBox([
     '',
-    `  ${colors.gray('Score')}  ${formatScore(overall)}${colors.gray('/100')}`,
+    `  ${colors.gray('Strategy')}  ${formatScore(overall)}${colors.gray('/100')}`,
     `  ${bar}`,
     '',
   ].join('\n'));
@@ -332,7 +332,7 @@ export function generateAnalysisTextReport(analysis: AnalysisResult): string {
   report += `║  ${padRight(`Recon Quality: ${analysis.strategy.reconQuality}/100`, width - 4)} ║\n`;
   report += `║  ${padRight(`Exploit Efficiency: ${analysis.strategy.exploitEfficiency}/100`, width - 4)} ║\n`;
   report += `║  ${padRight(`Adaptability: ${analysis.strategy.adaptability}/100`, width - 4)} ║\n`;
-  report += `║  ${padRight(`OVERALL: ${analysis.strategy.overallScore}/100`, width - 4)} ║\n`;
+  report += `║  ${padRight(`STRATEGY OVERALL: ${analysis.strategy.overallScore}/100`, width - 4)} ║\n`;
   report += `╠${divider}╣\n`;
 
   report += `║ ${padRight(`BEHAVIORAL APPROACH: ${analysis.behavior.approach.toUpperCase()}`, width - 2)} ║\n`;
@@ -456,7 +456,7 @@ export function generateMarkdownReport(result: RunResult, analysis?: AnalysisRes
   // Analysis
   if (analysis) {
     md += `## Analysis\n\n`;
-    md += `**Overall Score:** ${analysis.strategy.overallScore}/100\n\n`;
+    md += `**Strategy Score:** ${analysis.strategy.overallScore}/100 *(LLM assessment — see KSM for weighted benchmark score)*\n\n`;
     md += `### Executive Summary\n\n${analysis.narrative.summary}\n\n`;
 
     md += `### Key Findings\n\n`;

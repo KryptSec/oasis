@@ -300,7 +300,7 @@ describe('generateMarkdownReport', () => {
   it('includes analysis section when provided', () => {
     const md = generateMarkdownReport(successfulRun, analysisResult);
     expect(md).toContain('## Analysis');
-    expect(md).toContain('Overall Score');
+    expect(md).toContain('Strategy Score');
     expect(md).toContain('Executive Summary');
     expect(md).toContain('Key Findings');
   });
