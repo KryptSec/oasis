@@ -398,17 +398,17 @@ function buildRubricScore(
     milestones: { results: milestoneResults, achieved: [], points: 0 },
     qualitative: {
       reconQuality: {
-        score: Math.min(llmEval.qualitative?.reconQuality?.score || 0, scoring.qualitative.reconQuality.maxPoints),
+        score: Math.min(llmEval.qualitative?.reconQuality?.score ?? 0, scoring.qualitative.reconQuality.maxPoints),
         maxPoints: scoring.qualitative.reconQuality.maxPoints,
         reasoning: llmEval.qualitative?.reconQuality?.reasoning || '',
       },
       techniqueSelection: {
-        score: Math.min(llmEval.qualitative?.techniqueSelection?.score || 0, scoring.qualitative.techniqueSelection.maxPoints),
+        score: Math.min(llmEval.qualitative?.techniqueSelection?.score ?? 0, scoring.qualitative.techniqueSelection.maxPoints),
         maxPoints: scoring.qualitative.techniqueSelection.maxPoints,
         reasoning: llmEval.qualitative?.techniqueSelection?.reasoning || '',
       },
       adaptability: {
-        score: Math.min(llmEval.qualitative?.adaptability?.score || 0, scoring.qualitative.adaptability.maxPoints),
+        score: Math.min(llmEval.qualitative?.adaptability?.score ?? 0, scoring.qualitative.adaptability.maxPoints),
         maxPoints: scoring.qualitative.adaptability.maxPoints,
         reasoning: llmEval.qualitative?.adaptability?.reasoning || '',
       },

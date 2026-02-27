@@ -4,10 +4,10 @@
  */
 
 import { execSync } from 'child_process';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
 import { shellEscape } from './shell.js';
 import { DOCKER_STARTUP_POLL } from './constants.js';
+import { ConfigError } from './errors.js';
+import { getErrorStatus } from './retry.js';
 
 export interface EnvCheckResult {
   ok: boolean;
@@ -272,12 +272,7 @@ export async function checkApiKey(
           messages: [{ role: 'user', content: 'hi' }],
         });
       } catch (validationError: unknown) {
-        const errStatus = validationError != null && typeof validationError === 'object'
-          ? (validationError as Record<string, unknown>).status ??
-            (typeof (validationError as Record<string, unknown>).error === 'object' && (validationError as Record<string, unknown>).error != null
-              ? ((validationError as Record<string, unknown>).error as Record<string, unknown>).status
-              : undefined)
-          : undefined;
+        const errStatus = getErrorStatus(validationError);
         if (errStatus === 404) {
           return { ok: true, errors: [], hints: [] };
         }
@@ -301,8 +296,7 @@ export async function checkApiKey(
         });
       } catch (validationError: unknown) {
         const vErr = validationError != null && typeof validationError === 'object' ? validationError as Record<string, unknown> : {};
-        const errStatus = typeof vErr.status === 'number' ? vErr.status
-          : (typeof vErr.error === 'object' && vErr.error != null ? (vErr.error as Record<string, unknown>).status : undefined);
+        const errStatus = getErrorStatus(validationError);
         const errMsg = (typeof vErr.message === 'string' ? vErr.message : '').toLowerCase();
         // 404 = model not found but key was accepted — key is valid
         if (errStatus === 404) {
@@ -318,7 +312,9 @@ export async function checkApiKey(
         }
         // 400 "Incorrect API key" = invalid key — rethrow as 401 for consistent handling
         if (errStatus === 400 && errMsg.includes('incorrect api key')) {
-          throw { status: 401, message: typeof vErr.message === 'string' ? vErr.message : 'Incorrect API key' };
+          const err = new ConfigError(typeof vErr.message === 'string' ? vErr.message : 'Incorrect API key');
+          Object.assign(err, { status: 401 });
+          throw err;
         }
         throw validationError;
       }
@@ -331,10 +327,7 @@ export async function checkApiKey(
 
     return { ok: true, errors: [], hints: [] };
   } catch (error: unknown) {
-    const eObj = error != null && typeof error === 'object' ? error as Record<string, unknown> : {};
-    const status = typeof eObj.status === 'number' ? eObj.status
-      : typeof eObj.statusCode === 'number' ? eObj.statusCode
-      : (eObj.response != null && typeof eObj.response === 'object' ? (eObj.response as Record<string, unknown>).status as number | undefined : undefined);
+    const status = getErrorStatus(error);
 
     if (status === 401 || status === 403) {
       errors.push(`API key is invalid for ${provider}`);

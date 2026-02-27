@@ -77,7 +77,7 @@ export type AnalysisResponse = z.infer<typeof AnalysisResponseSchema>;
 // =============================================================================
 
 export const ToolInputSchema = z.object({
-  command: z.string(),
+  command: z.string().min(1),
 });
 
 export type ToolInput = z.infer<typeof ToolInputSchema>;

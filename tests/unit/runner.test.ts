@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDockerExecInvocation, stripThinkingTags, extractCommandFromText, findJsonBlocks, extractErrorOutput } from '../../src/lib/runner.js';
+import { buildDockerExecInvocation, stripThinkingTags, extractCommandFromText, findJsonBlocks, extractErrorOutput, trimMessages } from '../../src/lib/runner.js';
 
 describe('buildDockerExecInvocation', () => {
   it('uses docker exec with stdin script mode (no bash -c)', () => {
@@ -223,5 +223,109 @@ describe('extractErrorOutput', () => {
     const err = new Error('msg');
     (err as any).stderr = 'stderr output';
     expect(extractErrorOutput(err)).toBe('stderr output');
+  });
+});
+
+// =============================================================================
+// trimMessages
+// =============================================================================
+
+describe('trimMessages', () => {
+  const MAX_CONTEXT_MESSAGES = 40; // mirrors constants.ts
+
+  function makeMessages(count: number, startRole: 'user' | 'assistant' = 'user') {
+    const roles = ['user', 'assistant'] as const;
+    const offset = startRole === 'user' ? 0 : 1;
+    return Array.from({ length: count }, (_, i) => ({
+      role: roles[(i + offset) % 2],
+      content: `msg-${i}`,
+    }));
+  }
+
+  it('returns messages unchanged when under limit', () => {
+    const msgs = makeMessages(10);
+    expect(trimMessages(msgs)).toEqual(msgs);
+  });
+
+  it('returns messages unchanged when at limit', () => {
+    const msgs = makeMessages(MAX_CONTEXT_MESSAGES);
+    expect(trimMessages(msgs)).toEqual(msgs);
+  });
+
+  it('trims messages over limit preserving anchor', () => {
+    const msgs = makeMessages(MAX_CONTEXT_MESSAGES + 10);
+    const result = trimMessages(msgs);
+    // First message preserved
+    expect(result[0]).toBe(msgs[0]);
+    // Last message preserved
+    expect(result[result.length - 1]).toBe(msgs[msgs.length - 1]);
+    // Length is at most MAX_CONTEXT_MESSAGES
+    expect(result.length).toBeLessThanOrEqual(MAX_CONTEXT_MESSAGES);
+  });
+
+  it('preserves role alternation after trim', () => {
+    const msgs = makeMessages(MAX_CONTEXT_MESSAGES + 10);
+    const result = trimMessages(msgs);
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].role).not.toBe(result[i - 1].role);
+    }
+  });
+
+  it('drops adjacent same-role when anchor matches tail[0]', () => {
+    // Force anchor and tail[0] to share a role by using an even-offset count
+    // anchor is user (index 0), and we need tail[0] to also be user
+    // With alternating roles, tail[0] role depends on the slice offset
+    // Build a custom array where this collision happens
+    const msgs = makeMessages(MAX_CONTEXT_MESSAGES + 1);
+    // msgs[0].role = 'user', tail = msgs.slice(-39)
+    // msgs.slice(-39)[0] = msgs[MAX_CONTEXT_MESSAGES + 1 - 39] = msgs[2]
+    // msgs[2].role = 'user' — collision! tail[0] should be dropped
+    const result = trimMessages(msgs);
+    expect(result[0].role).toBe('user');
+    expect(result[1].role).not.toBe('user');
+    // Verify no adjacent same-role
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].role).not.toBe(result[i - 1].role);
+    }
+  });
+
+  it('drops multiple consecutive same-role messages at trim boundary', () => {
+    // Build array where the trim boundary lands on multiple same-role messages
+    // that collide with the anchor (messages[0]).
+    // Anchor = user. We need tail[0], tail[1], ... to also be 'user'.
+    const msgs: { role: string; content: string }[] = [
+      { role: 'user', content: 'anchor' },
+    ];
+    // Fill with alternating roles up to the trim point
+    for (let i = 1; i <= 5; i++) {
+      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `early-${i}` });
+    }
+    // Now add a block of consecutive 'user' messages (simulating tool results)
+    // followed by normal alternation to fill past the limit
+    msgs.push({ role: 'user', content: 'tool-1' });
+    msgs.push({ role: 'user', content: 'tool-2' });
+    msgs.push({ role: 'user', content: 'tool-3' });
+    // Fill remaining with alternating to go past limit
+    let nextRole: 'assistant' | 'user' = 'assistant';
+    while (msgs.length <= MAX_CONTEXT_MESSAGES + 5) {
+      msgs.push({ role: nextRole, content: `fill-${msgs.length}` });
+      nextRole = nextRole === 'assistant' ? 'user' : 'assistant';
+    }
+
+    const result = trimMessages(msgs);
+    // Anchor preserved
+    expect(result[0].role).toBe('user');
+    // result[1] must not be 'user' (anchor collision resolved)
+    expect(result[1].role).not.toBe('user');
+  });
+
+  it('works with OpenAI-style system role anchor', () => {
+    const msgs: { role: string; content: string }[] = [
+      { role: 'system', content: 'system prompt' },
+      ...makeMessages(MAX_CONTEXT_MESSAGES + 10).slice(1),
+    ];
+    const result = trimMessages(msgs);
+    expect(result[0].role).toBe('system');
+    expect(result.length).toBeLessThanOrEqual(MAX_CONTEXT_MESSAGES);
   });
 });

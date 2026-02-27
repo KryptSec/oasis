@@ -12,7 +12,6 @@ import { ToolInputSchema } from './schemas.js';
 import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig, AnalysisResult } from './types.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
-import { DockerError } from './errors.js';
 import { isValidRunId } from './results-path.js';
 import {
   MAX_COMPLETION_TOKENS,
@@ -29,9 +28,14 @@ const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
  * Sliding window for message arrays — prevents unbounded context growth.
  * Always keeps the first message (system/user prompt) + the last N messages.
  */
-function trimMessages<T>(messages: T[]): T[] {
+export function trimMessages<T extends { role: string }>(messages: T[]): T[] {
   if (messages.length <= MAX_CONTEXT_MESSAGES) return messages;
-  return [messages[0], ...messages.slice(-MAX_CONTEXT_MESSAGES + 1)];
+  let start = 0;
+  const tail = messages.slice(-MAX_CONTEXT_MESSAGES + 1);
+  while (start < tail.length && tail[start].role === messages[0].role) {
+    start++;
+  }
+  return [messages[0], ...tail.slice(start)];
 }
 
 // =============================================================================
@@ -181,6 +185,24 @@ export function extractErrorOutput(error: unknown): string {
   return stderr || (error instanceof Error ? error.message : 'Command failed');
 }
 
+const DOCKER_TRANSIENT_PATTERNS = [
+  'is not running',
+  'No such container',
+  'connection refused',
+  'Cannot connect to the Docker daemon',
+];
+
+function isDockerTransientError(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') return true; // no exit code → likely connectivity
+  const err = error as Record<string, unknown>;
+  if (typeof err.status !== 'number' || err.status === 0) return true;
+  // Non-zero exit code — check stderr for Docker-specific transient patterns
+  const stderr = typeof err.stderr === 'string'
+    ? err.stderr
+    : Buffer.isBuffer(err.stderr) ? err.stderr.toString('utf8') : '';
+  return DOCKER_TRANSIENT_PATTERNS.some(p => stderr.includes(p));
+}
+
 function executeCommand(command: string, containerName: string, verbose: boolean, maxAttempts = 3): string {
   if (verbose) {
     console.log(chalk.yellow(`\n> ${command}`));
@@ -201,7 +223,7 @@ function executeCommand(command: string, containerName: string, verbose: boolean
       }
       return output;
     } catch (error: unknown) {
-      if (attempt === maxAttempts) {
+      if (attempt === maxAttempts || !isDockerTransientError(error)) {
         const errorOutput = extractErrorOutput(error);
         if (verbose) {
           console.log(chalk.red(errorOutput));
@@ -456,6 +478,17 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
             if (config.verbose) {
               console.log(chalk.yellow(`\nSkipping invalid tool input: ${JSON.stringify(block.input)}`));
             }
+            messages.push({ role: 'assistant', content: assistantContent });
+            messages.push({
+              role: 'user',
+              content: [{
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: `Error: invalid tool input: ${JSON.stringify(block.input)}`,
+                is_error: true,
+              }],
+            });
+            assistantContent = [];
             continue;
           }
           const command = toolInput.data.command;
