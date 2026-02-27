@@ -334,12 +334,11 @@ async function parseAnalysisResponse(
 
     return analysisResult;
   } catch (error) {
-    console.error('Failed to parse analysis response:', error);
-
     return {
       runId,
       analyzedAt: new Date(),
       analyzerModel: DEFAULT_ANALYZER_MODEL,
+      parseFailed: true,
       attackChain: { phases: [], techniques: [], killChainCoverage: [] },
       narrative: { summary: 'Analysis parsing failed', detailed: `Error: ${error}`, keyFindings: [] },
       behavior: { approach: 'exploratory', approachDescription: 'Unable to determine', strengths: [], inefficiencies: [], decisionQuality: 0 },

@@ -142,6 +142,7 @@ export interface AnalysisResult {
     scoreBreakdown: string;
   };
   rubricScore?: RubricScore;
+  parseFailed?: boolean;
 }
 
 // =============================================================================

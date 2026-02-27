@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { getChallengesDir, getResultsDir } from '../lib/config.js';
 import { calculateKSM, calculateEfficacyFromResults, getTokenEfficiency } from '../lib/scoring.js';
 import { fetchRegistryIndex, fetchChallengeConfig } from '../lib/registry.js';
+import { loadAnalysisResult } from '../lib/runner.js';
 import type { RegistryEntry } from '../lib/registry.js';
 import type { ChallengeConfig, RunResult, AnalysisResult } from '../lib/types.js';
 
@@ -111,13 +112,7 @@ export function loadRecentResults(limit = 20): LoadedResult[] {
     try {
       const result: RunResult = JSON.parse(readFileSync(file.path, 'utf-8'));
       const analysisPath = resolve(dir, `${file.id}.analysis.json`);
-      let analysis: AnalysisResult | null = null;
-
-      if (existsSync(analysisPath)) {
-        try {
-          analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-        } catch { /* skip */ }
-      }
+      const analysis = loadAnalysisResult(analysisPath);
 
       allEntries.push({ id: file.id, result, analysis });
     } catch { /* skip malformed */ }

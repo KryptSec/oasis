@@ -6,6 +6,7 @@ import { colors, status, formatScore, formatTime, printBox, sectionHeader } from
 import { calculateKSM, calculateEfficacyFromResults, getTokenEfficiency } from '../lib/scoring.js';
 import { getResultsDir, getChallengesDir } from '../lib/config.js';
 import { resolveAnalysisPath, resolveResultPath, InvalidRunIdError, ResultPathEscapeError } from '../lib/results-path.js';
+import { loadAnalysisResult } from '../lib/runner.js';
 import type { RunResult, AnalysisResult, ChallengeConfig } from '../lib/types.js';
 
 export const resultsCommand = new Command('results')
@@ -55,12 +56,7 @@ resultsCommand
         if (options.challenge && result.challenge !== options.challenge) continue;
 
         const analysisPath = pathResolve(getResultsDir(), `${file.id}.analysis.json`);
-        let analysis: AnalysisResult | null = null;
-        if (existsSync(analysisPath)) {
-          try {
-            analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-          } catch {}
-        }
+        const analysis = loadAnalysisResult(analysisPath);
 
         loaded.push({ id: file.id, result, analysis });
       } catch {
@@ -314,13 +310,7 @@ resultsCommand
         const filePath = pathResolve(resultsDir, file);
         const result: RunResult = JSON.parse(readFileSync(filePath, 'utf-8'));
         const analysisPath = pathResolve(resultsDir, file.replace('.json', '.analysis.json'));
-        let analysis: AnalysisResult | null = null;
-
-        if (existsSync(analysisPath)) {
-          try {
-            analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-          } catch {}
-        }
+        const analysis = loadAnalysisResult(analysisPath);
 
         allLoadedEntries.push({ result, analysis });
       } catch {}
@@ -512,13 +502,7 @@ function compareByChallengeId(challengeId: string): void {
       if (result.challenge !== challengeId) continue;
 
       const analysisPath = pathResolve(resultsDir, file.replace('.json', '.analysis.json'));
-      let analysis: AnalysisResult | null = null;
-
-      if (existsSync(analysisPath)) {
-        try {
-          analysis = JSON.parse(readFileSync(analysisPath, 'utf-8'));
-        } catch {}
-      }
+      const analysis = loadAnalysisResult(analysisPath);
 
       loadedEntries.push({ result, analysis });
     } catch {}
