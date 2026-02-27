@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateKSM, fallbackOverallScore } from '../../src/lib/scoring.js';
-import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL } from '../../src/lib/analyzer.js';
+import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL, parseAnalysisResponse } from '../../src/lib/analyzer.js';
 import type { RunResult } from '../../src/lib/types.js';
 
 function makeRunResult(model: string, modelVersion: string): RunResult {
@@ -203,5 +203,63 @@ describe('calculateKSM edge cases', () => {
 
   it('methodology=101 (over 100), efficacy=0 still caps at 30', () => {
     expect(calculateKSM(101, 0)).toBe(30);
+  });
+});
+
+// =============================================================================
+// parseAnalysisResponse — malformed LLM output handling
+// =============================================================================
+
+describe('parseAnalysisResponse', () => {
+  const dummyResult = makeRunResult('anthropic', 'claude-3');
+
+  it('returns parseFailed for empty string', async () => {
+    const result = await parseAnalysisResponse('', 'run-1', dummyResult);
+    expect(result.parseFailed).toBe(true);
+  });
+
+  it('returns parseFailed for truncated JSON', async () => {
+    const result = await parseAnalysisResponse('{"attackChain": {"phases": [', 'run-1', dummyResult);
+    expect(result.parseFailed).toBe(true);
+  });
+
+  it('provides graceful defaults for valid JSON with missing fields', async () => {
+    const result = await parseAnalysisResponse('{}', 'run-1', dummyResult);
+    expect(result.parseFailed).toBeUndefined();
+    expect(result.attackChain.phases).toEqual([]);
+    expect(result.narrative.summary).toBe('Analysis unavailable');
+    expect(result.behavior.approach).toBe('exploratory');
+    expect(result.strategy.overallScore).toBe(0);
+  });
+
+  it('preserves overallScore: 0 without triggering fallback', async () => {
+    const json = JSON.stringify({
+      strategy: { reconQuality: 80, exploitEfficiency: 70, adaptability: 90, overallScore: 0, scoreBreakdown: 'test' },
+    });
+    const result = await parseAnalysisResponse(json, 'run-1', dummyResult);
+    expect(result.strategy.overallScore).toBe(0);
+  });
+
+  it('preserves decisionQuality: 0', async () => {
+    const json = JSON.stringify({
+      behavior: { decisionQuality: 0, approach: 'methodical' },
+    });
+    const result = await parseAnalysisResponse(json, 'run-1', dummyResult);
+    expect(result.behavior.decisionQuality).toBe(0);
+  });
+
+  it('passes through extra fields without error', async () => {
+    const json = JSON.stringify({
+      attackChain: { phases: [], techniques: [], killChainCoverage: [] },
+      extraField: 'should not break',
+    });
+    const result = await parseAnalysisResponse(json, 'run-1', dummyResult);
+    expect(result.parseFailed).toBeUndefined();
+  });
+
+  it('strips markdown code fences', async () => {
+    const json = '```json\n{"strategy": {"overallScore": 42}}\n```';
+    const result = await parseAnalysisResponse(json, 'run-1', dummyResult);
+    expect(result.strategy.overallScore).toBe(42);
   });
 });

@@ -14,7 +14,7 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
   anthropic: {
     name: 'anthropic',
     displayName: 'Anthropic',
-    baseUrl: null,  // Uses native Anthropic SDK
+    baseUrl: 'https://api.anthropic.com',
     envKey: 'ANTHROPIC_API_KEY',
     models: ['claude-opus-4-6-20250522', 'claude-sonnet-4-6-20250514', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'],
     isOpenAICompatible: false,
@@ -116,7 +116,7 @@ export async function fetchAvailableModels(
       });
       const response = await client.models.list({ limit: 100 });
       const ids = response.data
-        .map((m: any) => m.id as string)
+        .map((m) => m.id)
         .sort();
       return ids.length > 0 ? { models: ids, live: true } : fallback;
     } else {

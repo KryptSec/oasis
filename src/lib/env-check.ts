@@ -6,6 +6,8 @@
 import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
+import { shellEscape } from './shell.js';
+import { DOCKER_STARTUP_POLL } from './constants.js';
 
 export interface EnvCheckResult {
   ok: boolean;
@@ -21,11 +23,6 @@ export interface DockerStartResult {
 }
 
 const REQUIRED_KALI_TOOLS = ['curl', 'wget', 'python3'];
-
-/** Escape a string for safe inclusion in a shell command (single-quote wrapping). */
-function shellEscape(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
 
 /**
  * Check if Docker daemon is running.
@@ -90,7 +87,7 @@ export async function ensureDocker(
 
   // Poll until Docker daemon is ready
   const start = Date.now();
-  const pollInterval = 2500;
+  const pollInterval = DOCKER_STARTUP_POLL;
 
   while (Date.now() - start < timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
@@ -274,10 +271,14 @@ export async function checkApiKey(
           max_tokens: 1,
           messages: [{ role: 'user', content: 'hi' }],
         });
-      } catch (validationError: any) {
-        const errStatus = validationError?.status ?? validationError?.error?.status;
+      } catch (validationError: unknown) {
+        const errStatus = validationError != null && typeof validationError === 'object'
+          ? (validationError as Record<string, unknown>).status ??
+            (typeof (validationError as Record<string, unknown>).error === 'object' && (validationError as Record<string, unknown>).error != null
+              ? ((validationError as Record<string, unknown>).error as Record<string, unknown>).status
+              : undefined)
+          : undefined;
         if (errStatus === 404) {
-          // Model deprecated but key was accepted — key is valid
           return { ok: true, errors: [], hints: [] };
         }
         throw validationError;
@@ -298,9 +299,11 @@ export async function checkApiKey(
           max_tokens: 1,
           messages: [{ role: 'user', content: 'hi' }],
         });
-      } catch (validationError: any) {
-        const errStatus = validationError?.status ?? validationError?.error?.status;
-        const errMsg = (validationError?.message || '').toLowerCase();
+      } catch (validationError: unknown) {
+        const vErr = validationError != null && typeof validationError === 'object' ? validationError as Record<string, unknown> : {};
+        const errStatus = typeof vErr.status === 'number' ? vErr.status
+          : (typeof vErr.error === 'object' && vErr.error != null ? (vErr.error as Record<string, unknown>).status : undefined);
+        const errMsg = (typeof vErr.message === 'string' ? vErr.message : '').toLowerCase();
         // 404 = model not found but key was accepted — key is valid
         if (errStatus === 404) {
           return { ok: true, errors: [], hints: [] };
@@ -315,7 +318,7 @@ export async function checkApiKey(
         }
         // 400 "Incorrect API key" = invalid key — rethrow as 401 for consistent handling
         if (errStatus === 400 && errMsg.includes('incorrect api key')) {
-          throw { status: 401, message: validationError.message };
+          throw { status: 401, message: typeof vErr.message === 'string' ? vErr.message : 'Incorrect API key' };
         }
         throw validationError;
       }
@@ -327,15 +330,19 @@ export async function checkApiKey(
     }
 
     return { ok: true, errors: [], hints: [] };
-  } catch (error: any) {
-    const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+  } catch (error: unknown) {
+    const eObj = error != null && typeof error === 'object' ? error as Record<string, unknown> : {};
+    const status = typeof eObj.status === 'number' ? eObj.status
+      : typeof eObj.statusCode === 'number' ? eObj.statusCode
+      : (eObj.response != null && typeof eObj.response === 'object' ? (eObj.response as Record<string, unknown>).status as number | undefined : undefined);
 
     if (status === 401 || status === 403) {
       errors.push(`API key is invalid for ${provider}`);
       hints.push(`Verify your key and reconfigure:`);
       hints.push(`  oasis config set api-key ${provider} <your-key>`);
     } else {
-      errors.push(`Could not validate API key for ${provider}: ${error?.message || 'Unknown error'}`);
+      const errMsg = error instanceof Error ? error.message : 'Unknown error';
+      errors.push(`Could not validate API key for ${provider}: ${errMsg}`);
       hints.push('Check your network connection and API endpoint');
       if (baseUrl) {
         hints.push(`API URL: ${baseUrl}`);

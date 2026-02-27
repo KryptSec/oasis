@@ -1,49 +1,58 @@
 // Rate-limit retry utilities: 429/5xx handling with exponential backoff and Retry-After support.
 
 import chalk from 'chalk';
+import { OasisError } from './errors.js';
 
 export const RATE_LIMIT_MAX_RETRIES = 3;
 export const RATE_LIMIT_BASE_DELAY_MS = 2000;
 
-export class QuotaExceededError extends Error {
+export class QuotaExceededError extends OasisError {
   constructor(
     message: string,
     public readonly provider?: string,
     public readonly model?: string,
   ) {
-    super(message);
+    super(message, { provider, model });
     this.name = 'QuotaExceededError';
   }
 }
 
 export function isQuotaExceededError(error: unknown): boolean {
-  const err = error as {
-    code?: string; message?: string;
-    error?: { code?: string; message?: string };
-  };
-  if (err?.code === 'insufficient_quota') return true;
-  if (err?.error?.code === 'insufficient_quota') return true;
-  if (typeof err?.message === 'string' &&
+  if (error == null || typeof error !== 'object') return false;
+  const err = error as Record<string, unknown>;
+  if (err.code === 'insufficient_quota') return true;
+  if (err.error != null && typeof err.error === 'object' &&
+      (err.error as Record<string, unknown>).code === 'insufficient_quota') return true;
+  if (typeof err.message === 'string' &&
       err.message.toLowerCase().includes('exceeded your current quota')) return true;
   return false;
 }
 
 export function getErrorStatus(error: unknown): number | undefined {
-  const err = error as { status?: number; statusCode?: number; response?: { status?: number } };
-  return err?.status ?? err?.statusCode ?? err?.response?.status;
+  if (error == null || typeof error !== 'object') return undefined;
+  const err = error as Record<string, unknown>;
+  if (typeof err.status === 'number') return err.status;
+  if (typeof err.statusCode === 'number') return err.statusCode;
+  if (err.response != null && typeof err.response === 'object') {
+    const resp = err.response as Record<string, unknown>;
+    if (typeof resp.status === 'number') return resp.status;
+  }
+  return undefined;
 }
 
 export function getRetryAfterHeader(error: unknown): string | undefined {
-  const err = error as {
-    headers?: Headers | Record<string, string>;
-    response?: { headers?: Headers | Record<string, string> };
-  };
-  const headers = err?.headers ?? err?.response?.headers;
-  if (!headers) return undefined;
-  if (typeof (headers as Headers).get === 'function') {
-    return (headers as Headers).get?.('retry-after') ?? undefined;
+  if (error == null || typeof error !== 'object') return undefined;
+  const err = error as Record<string, unknown>;
+  const headersSource = err.headers ??
+    (err.response != null && typeof err.response === 'object'
+      ? (err.response as Record<string, unknown>).headers
+      : undefined);
+  if (headersSource == null || typeof headersSource !== 'object') return undefined;
+  if (typeof (headersSource as { get?: unknown }).get === 'function') {
+    return ((headersSource as Headers).get('retry-after')) ?? undefined;
   }
-  return (headers as Record<string, string>)?.['retry-after'] ?? (headers as Record<string, string>)?.['Retry-After'];
+  const hdr = headersSource as Record<string, string>;
+  return hdr['retry-after'] ?? hdr['Retry-After'];
 }
 
 export function isRetryableStatus(status: number | undefined): boolean {
@@ -63,9 +72,9 @@ export function getRetryDelayMs(attempt: number, error: unknown): number {
 
 export const DEFAULT_API_TIMEOUT_MS = 120_000; // 2 minutes
 
-export class ApiTimeoutError extends Error {
+export class ApiTimeoutError extends OasisError {
   constructor(context: string, timeoutMs: number) {
-    super(`${context}: timed out after ${timeoutMs / 1000}s`);
+    super(`${context}: timed out after ${timeoutMs / 1000}s`, { context, timeoutMs });
     this.name = 'ApiTimeoutError';
   }
 }

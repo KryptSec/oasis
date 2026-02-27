@@ -4,6 +4,7 @@
 import Table from 'cli-table3';
 import { execSync } from 'child_process';
 import type { RunResult, AttackTechnique, AnalysisResult } from './types.js';
+import type { JsonReport } from './schemas.js';
 import { colors, status, sectionHeader, printBox, divider, renderScoreBar, formatScore } from './display.js';
 
 export function copyToClipboard(text: string): boolean {
@@ -353,7 +354,7 @@ export function generateAnalysisTextReport(analysis: AnalysisResult): string {
 // =============================================================================
 
 export function generateJsonReport(result: RunResult, analysis?: AnalysisResult): string {
-  const report: any = {
+  const report: JsonReport = {
     metadata: {
       runId: result.id,
       model: result.modelVersion,

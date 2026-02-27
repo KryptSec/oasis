@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, openSync, writeSync, closeSync, constants } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
+import { ConfigError } from './errors.js';
+import { PROVIDERS, resolveProviderName } from './providers.js';
 
 // XDG Base Directory compliant config path
 function resolveConfigDir(): string {
@@ -48,7 +50,8 @@ export function loadConfig(): OasisConfig {
   }
   try {
     return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
-  } catch {
+  } catch (error) {
+    console.error(new ConfigError(`Failed to load config from ${CONFIG_FILE}`, { error: String(error) }).message);
     return {};
   }
 }
@@ -78,21 +81,6 @@ export function getResultsDir(): string {
 
 export function getConfigDir(): string {
   return CONFIG_DIR;
-}
-
-// Run-ID validation and safe path resolution
-const SAFE_RUN_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-export function resolveResultPath(runId: string, suffix: '.json' | '.analysis.json' = '.json'): string {
-  if (!SAFE_RUN_ID_PATTERN.test(runId)) {
-    throw new Error(`Invalid run ID: "${runId}". Run IDs may only contain letters, numbers, hyphens, and underscores.`);
-  }
-  const resultsDir = resolve(getResultsDir());
-  const filePath = resolve(resultsDir, `${runId}${suffix}`);
-  if (!filePath.startsWith(resultsDir)) {
-    throw new Error(`Invalid run ID: "${runId}". Path escapes results directory.`);
-  }
-  return filePath;
 }
 
 // Registry URL resolution: config → env var → default
@@ -130,7 +118,8 @@ export function loadCredentials(): OasisCredentials {
   }
   try {
     return JSON.parse(readFileSync(CREDENTIALS_FILE, 'utf-8'));
-  } catch {
+  } catch (error) {
+    console.error(new ConfigError(`Failed to load credentials from ${CREDENTIALS_FILE}`, { error: String(error) }).message);
     return { apiKeys: {} };
   }
 }
@@ -200,15 +189,8 @@ function getApiKeyFromEnv(provider: string): string | undefined {
   return envVar ? process.env[envVar] : undefined;
 }
 
-// Provider normalization
-export function normalizeProvider(provider: string): string {
-  const aliases: Record<string, string> = {
-    claude: 'anthropic',
-    grok: 'xai',
-    gemini: 'google',
-  };
-  return aliases[provider.toLowerCase()] || provider.toLowerCase();
-}
+// Provider normalization — delegates to providers.ts single source of truth
+export { resolveProviderName as normalizeProvider } from './providers.js';
 
 // Provider URLs (for ollama, custom endpoints)
 export function getProviderUrl(provider: string): string | undefined {
@@ -238,22 +220,13 @@ export function listProviderUrls(): Record<string, string> {
   return config.providerUrls || {};
 }
 
-// Default URLs for providers
-const DEFAULT_PROVIDER_URLS: Record<string, string> = {
-  anthropic: 'https://api.anthropic.com',
-  openai: 'https://api.openai.com/v1',
-  xai: 'https://api.x.ai/v1',
-  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
-  ollama: 'http://localhost:11434/v1',
-};
-
 export function getEffectiveProviderUrl(provider: string): string {
-  const normalized = normalizeProvider(provider);
+  const normalized = resolveProviderName(provider);
   // Custom URL takes precedence
   const customUrl = getProviderUrl(normalized);
   if (customUrl) {
     return customUrl;
   }
-  // Fall back to default
-  return DEFAULT_PROVIDER_URLS[normalized] || '';
+  // Fall back to provider preset
+  return PROVIDERS[normalized]?.baseUrl || '';
 }

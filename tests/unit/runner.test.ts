@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDockerExecInvocation, stripThinkingTags, extractCommandFromText, findJsonBlocks } from '../../src/lib/runner.js';
+import { buildDockerExecInvocation, stripThinkingTags, extractCommandFromText, findJsonBlocks, extractErrorOutput } from '../../src/lib/runner.js';
 
 describe('buildDockerExecInvocation', () => {
   it('uses docker exec with stdin script mode (no bash -c)', () => {
@@ -185,5 +185,43 @@ describe('findJsonBlocks', () => {
   it('handles unbalanced braces by skipping incomplete blocks', () => {
     const input = '{"complete":true} {"incomplete":';
     expect(findJsonBlocks(input)).toEqual(['{"complete":true}']);
+  });
+});
+
+// =============================================================================
+// extractErrorOutput
+// =============================================================================
+
+describe('extractErrorOutput', () => {
+  it('extracts stderr string from error object', () => {
+    const err = { stderr: 'permission denied', message: 'fallback' };
+    expect(extractErrorOutput(err)).toBe('permission denied');
+  });
+
+  it('extracts stderr Buffer from error object', () => {
+    const err = { stderr: Buffer.from('buffer error'), message: 'fallback' };
+    expect(extractErrorOutput(err)).toBe('buffer error');
+  });
+
+  it('falls back to Error message when no stderr', () => {
+    expect(extractErrorOutput(new Error('something broke'))).toBe('something broke');
+  });
+
+  it('returns default for null', () => {
+    expect(extractErrorOutput(null)).toBe('Command failed');
+  });
+
+  it('returns default for undefined', () => {
+    expect(extractErrorOutput(undefined)).toBe('Command failed');
+  });
+
+  it('handles string errors', () => {
+    expect(extractErrorOutput('raw string')).toBe('Command failed');
+  });
+
+  it('prefers stderr over message', () => {
+    const err = new Error('msg');
+    (err as any).stderr = 'stderr output';
+    expect(extractErrorOutput(err)).toBe('stderr output');
   });
 });

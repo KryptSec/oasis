@@ -2,17 +2,37 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { execFileSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import chalk from 'chalk';
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { resolve } from 'path';
-import { wasSuccessful, classifyToAttack, classifyCommand } from './classifier.js';
+import { wasSuccessful, classifyToAttack, classifyCommand, extractTool } from './classifier.js';
+import { ToolInputSchema } from './schemas.js';
 import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig, AnalysisResult } from './types.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
+import { DockerError } from './errors.js';
+import { isValidRunId } from './results-path.js';
+import {
+  MAX_COMPLETION_TOKENS,
+  STEP_OUTPUT_LIMIT,
+  TOOL_FEEDBACK_LIMIT,
+  DOCKER_EXEC_TIMEOUT,
+  VERBOSE_OUTPUT_PREVIEW,
+  MAX_CONTEXT_MESSAGES,
+} from './constants.js';
 
 const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
+
+/**
+ * Sliding window for message arrays — prevents unbounded context growth.
+ * Always keeps the first message (system/user prompt) + the last N messages.
+ */
+function trimMessages<T>(messages: T[]): T[] {
+  if (messages.length <= MAX_CONTEXT_MESSAGES) return messages;
+  return [messages[0], ...messages.slice(-MAX_CONTEXT_MESSAGES + 1)];
+}
 
 // =============================================================================
 // Thinking-Tag Stripping & Fallback Command Extraction
@@ -152,37 +172,49 @@ export function buildDockerExecInvocation(command: string, containerName: string
   };
 }
 
-function executeCommand(command: string, containerName: string, verbose: boolean): string {
+export function extractErrorOutput(error: unknown): string {
+  const stderr = error != null && typeof error === 'object' && 'stderr' in error
+    ? (typeof error.stderr === 'string'
+        ? error.stderr
+        : Buffer.isBuffer(error.stderr) ? error.stderr.toString('utf8') : '')
+    : '';
+  return stderr || (error instanceof Error ? error.message : 'Command failed');
+}
+
+function executeCommand(command: string, containerName: string, verbose: boolean, maxAttempts = 3): string {
   if (verbose) {
     console.log(chalk.yellow(`\n> ${command}`));
   }
-  try {
-    const invocation = buildDockerExecInvocation(command, containerName);
-    const result = execFileSync(invocation.command, invocation.args, {
-      input: invocation.input,
-      encoding: 'utf8',
-      timeout: 60000,
-      maxBuffer: 10 * 1024 * 1024,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const output = result.trim();
-    if (verbose) {
-      console.log(chalk.gray(output.substring(0, 2000) + (output.length > 2000 ? '\n... (truncated)' : '')));
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const invocation = buildDockerExecInvocation(command, containerName);
+      const result = execFileSync(invocation.command, invocation.args, {
+        input: invocation.input,
+        encoding: 'utf8',
+        timeout: DOCKER_EXEC_TIMEOUT,
+        maxBuffer: 10 * 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      const output = result.trim();
+      if (verbose) {
+        console.log(chalk.gray(output.substring(0, VERBOSE_OUTPUT_PREVIEW) + (output.length > VERBOSE_OUTPUT_PREVIEW ? '\n... (truncated)' : '')));
+      }
+      return output;
+    } catch (error: unknown) {
+      if (attempt === maxAttempts) {
+        const errorOutput = extractErrorOutput(error);
+        if (verbose) {
+          console.log(chalk.red(errorOutput));
+        }
+        return errorOutput;
+      }
+      if (verbose) {
+        console.log(chalk.yellow(`Docker exec failed (attempt ${attempt}/${maxAttempts}), retrying...`));
+      }
+      execSync(`sleep ${attempt}`); // 1s, 2s backoff
     }
-    return output;
-  } catch (error: unknown) {
-    const errorWithStderr = error as { stderr?: string | Buffer; message?: string };
-    const stderr = typeof errorWithStderr.stderr === 'string'
-      ? errorWithStderr.stderr
-      : Buffer.isBuffer(errorWithStderr.stderr)
-        ? errorWithStderr.stderr.toString('utf8')
-        : '';
-    const errorOutput = stderr || errorWithStderr.message || 'Command failed';
-    if (verbose) {
-      console.log(chalk.red(errorOutput));
-    }
-    return errorOutput;
   }
+  return 'Command failed after retries';
 }
 
 /**
@@ -202,7 +234,7 @@ function executeAndRecordStep(opts: {
   const startTime = new Date();
   const output = executeCommand(opts.command, opts.containerName, opts.verbose);
   const endTime = new Date();
-  const tool = opts.command.trim().split(/\s+/)[0] || 'unknown';
+  const tool = extractTool(opts.command);
   const success = wasSuccessful(opts.command, output);
 
   const technique = classifyToAttack(opts.command);
@@ -214,7 +246,7 @@ function executeAndRecordStep(opts: {
     reasoning: opts.currentReasoning,
     type: 'tool_call',
     command: opts.command,
-    output: output.substring(0, 10000),
+    output: output.substring(0, STEP_OUTPUT_LIMIT),
     technique,
     methodology: classifyCommand(opts.command),
     tool,
@@ -356,15 +388,16 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
         console.log(chalk.blue(`\n--- Iteration ${iterations} ---`));
       }
 
+      const trimmedMessages = trimMessages(messages);
       let response: Awaited<ReturnType<typeof client.messages.create>>;
       try {
         response = await withRateLimitRetry(
           () => client.messages.create({
             model: config.modelId,
-            max_tokens: 4096,
+            max_tokens: MAX_COMPLETION_TOKENS,
             system: systemPrompt,
             tools: [runCommandTool],
-            messages,
+            messages: trimmedMessages,
           }),
           `Iteration ${iterations}`,
           config.verbose,
@@ -418,14 +451,20 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
         }
 
         if (block.type === 'tool_use') {
-          const toolInput = block.input as { command: string };
-          const command = toolInput.command;
+          const toolInput = ToolInputSchema.safeParse(block.input);
+          if (!toolInput.success) {
+            if (config.verbose) {
+              console.log(chalk.yellow(`\nSkipping invalid tool input: ${JSON.stringify(block.input)}`));
+            }
+            continue;
+          }
+          const command = toolInput.data.command;
 
           const commandStartTime = new Date();
           const output = executeCommand(command, containerName, config.verbose || false);
           const commandEndTime = new Date();
 
-          const tool = command.trim().split(/\s+/)[0] || 'unknown';
+          const tool = extractTool(command);
           const success = wasSuccessful(command, output);
           const technique = classifyToAttack(command);
 
@@ -436,7 +475,7 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
             reasoning: currentReasoning,
             type: 'tool_call',
             command,
-            output: output.substring(0, 10000),
+            output: output.substring(0, STEP_OUTPUT_LIMIT),
             technique,
             methodology: classifyCommand(command),
             tool,
@@ -459,7 +498,7 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
             content: [{
               type: 'tool_result',
               tool_use_id: block.id,
-              content: output.substring(0, 50000),
+              content: output.substring(0, TOOL_FEEDBACK_LIMIT),
             }],
           });
 
@@ -477,8 +516,8 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
         }
       }
     }
-  } catch (error: any) {
-    agentError = error?.message || String(error);
+  } catch (error: unknown) {
+    agentError = error instanceof Error ? error.message : String(error);
     if (config.verbose) {
       console.error(chalk.red(`\nAgent error: ${agentError}`));
     }
@@ -499,7 +538,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
 
   let baseURL = config.baseUrl;
   if (!baseURL && provider) {
-    baseURL = provider.baseUrl || 'https://api.openai.com/v1';
+    baseURL = provider.baseUrl || undefined;
   }
 
   let apiKey = config.apiKey;
@@ -572,13 +611,14 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
         console.log(chalk.blue(`\n--- Iteration ${iterations} ---`));
       }
 
+      const trimmedOaiMessages = trimMessages(messages);
       let response: Awaited<ReturnType<typeof client.chat.completions.create>>;
       try {
         response = await withRateLimitRetry(
           () => client.chat.completions.create({
             model: config.modelId,
-            max_completion_tokens: 4096,
-            messages,
+            max_completion_tokens: MAX_COMPLETION_TOKENS,
+            messages: trimmedOaiMessages,
             tools,
           }),
           `Iteration ${iterations}`,
@@ -608,7 +648,9 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
 
       let currentReasoning = '';
 
-      const reasoningText = ('reasoning_content' in assistantMessage ? (assistantMessage as Record<string, unknown>).reasoning_content as string : null) || assistantMessage.content || '';
+      const reasoningText = ('reasoning_content' in assistantMessage && typeof (assistantMessage as Record<string, unknown>).reasoning_content === 'string'
+        ? (assistantMessage as Record<string, unknown>).reasoning_content as string
+        : null) || assistantMessage.content || '';
       if (reasoningText) {
         // Strip thinking tags for display & reasoning, keep original content for flag matching
         const displayText = stripThinkingTags(assistantMessage.content || '');
@@ -638,7 +680,18 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
       if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
         for (const toolCall of assistantMessage.tool_calls) {
           if (toolCall.type !== 'function') continue;
-          const args = JSON.parse(toolCall.function.arguments);
+          let args: { command: string };
+          try {
+            args = ToolInputSchema.parse(JSON.parse(toolCall.function.arguments));
+          } catch {
+            // Invalid tool input — return error to model so it can recover
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: `Error: invalid tool arguments: ${toolCall.function.arguments}`,
+            });
+            continue;
+          }
           const result = executeAndRecordStep({
             command: args.command,
             containerName,
@@ -657,7 +710,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: result.output.substring(0, 50000),
+            content: result.output.substring(0, TOOL_FEEDBACK_LIMIT),
           });
         }
       } else {
@@ -684,7 +737,7 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
           if (result.flag) foundFlag = result.flag;
 
           // Feed output back as a user message (no tool_call_id available)
-          messages.push({ role: 'user', content: `Command output:\n${result.output.substring(0, 50000)}` });
+          messages.push({ role: 'user', content: `Command output:\n${result.output.substring(0, TOOL_FEEDBACK_LIMIT)}` });
         } else if (choice.finish_reason === 'stop' && !foundFlag) {
           if (config.verbose) {
             console.log(chalk.yellow('\nAgent finished without finding flag.'));
@@ -693,8 +746,8 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
         }
       }
     }
-  } catch (error: any) {
-    agentError = error?.message || String(error);
+  } catch (error: unknown) {
+    agentError = error instanceof Error ? error.message : String(error);
     if (config.verbose) {
       console.error(chalk.red(`\nAgent error: ${agentError}`));
     }
@@ -786,8 +839,7 @@ export function saveAnalysisResult(
     mkdirSync(resultsDir, { recursive: true });
   }
 
-  const SAFE_RUN_ID = /^[A-Za-z0-9_-]+$/;
-  if (!SAFE_RUN_ID.test(runId)) {
+  if (!isValidRunId(runId)) {
     throw new Error(`Invalid run ID: "${runId}"`);
   }
   const jsonPath = resolve(resultsDir, `${runId}.analysis.json`);
