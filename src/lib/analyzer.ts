@@ -232,7 +232,7 @@ Return ONLY the JSON object, no other text.`;
 // Response Parser
 // =============================================================================
 
-function extractJson(text: string): string {
+export function extractJson(text: string): string {
   let s = text.trim();
 
   // Strip markdown fences anywhere in the response
@@ -472,7 +472,16 @@ export function resolveDefaultAnalyzerModel(analyzerProvider: string, benchmarkR
   // filter out known non-text models that can't do chat completions.
   const benchmarkProvider = normalizeProvider(benchmarkResult.model);
   if (benchmarkProvider === normalizeProvider(analyzerProvider)) {
-    const isTextModel = !/imagine|image|embed|tts|whisper|dall-e/i.test(benchmarkResult.modelVersion || '');
+    const NON_TEXT_MODEL_PATTERNS: RegExp[] = [
+      /^grok-imagine-/i,
+      /^dall-e-/i,
+      /^tts-/i,
+      /^whisper-/i,
+      /[-.]embed(ding)?s?[-.:]/i,
+      /^text-embed(ding)?/i,
+    ];
+    const modelName = benchmarkResult.modelVersion || '';
+    const isTextModel = !NON_TEXT_MODEL_PATTERNS.some(p => p.test(modelName));
     return (isTextModel ? benchmarkResult.modelVersion : null) || preset?.models[0] || DEFAULT_ANALYZER_MODEL;
   }
 

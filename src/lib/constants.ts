@@ -1,7 +1,7 @@
 // Named constants — replacing magic numbers across the codebase
 
 // API limits
-export const MAX_COMPLETION_TOKENS = 8192;
+export const MAX_COMPLETION_TOKENS = 4096;
 
 // Output truncation
 export const STEP_OUTPUT_LIMIT = 10_000;      // Stored in step records
