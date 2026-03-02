@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateKSM, fallbackOverallScore } from '../../src/lib/scoring.js';
-import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL, parseAnalysisResponse } from '../../src/lib/analyzer.js';
+import { resolveDefaultAnalyzerModel, DEFAULT_ANALYZER_MODEL, parseAnalysisResponse, extractJson } from '../../src/lib/analyzer.js';
 import type { RunResult } from '../../src/lib/types.js';
 
 function makeRunResult(model: string, modelVersion: string): RunResult {
@@ -144,6 +144,26 @@ describe('resolveDefaultAnalyzerModel', () => {
     expect(resolveDefaultAnalyzerModel('xai', result)).toBe('grok-3-latest');
   });
 
+  it('filters out image models — falls back to preset default', () => {
+    const result = makeRunResult('xai', 'grok-imagine-image');
+    expect(resolveDefaultAnalyzerModel('xai', result)).toBe('grok-4-0709');
+  });
+
+  it('filters out embedding models — falls back to preset default', () => {
+    const result = makeRunResult('openai', 'text-embedding-3-large');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
+  });
+
+  it('filters out tts models — falls back to preset default', () => {
+    const result = makeRunResult('openai', 'tts-1-hd');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
+  });
+
+  it('does not filter vision/text models with "image" in the name', () => {
+    const result = makeRunResult('openai', 'gpt-5-image-understanding');
+    expect(resolveDefaultAnalyzerModel('openai', result)).toBe('gpt-5-image-understanding');
+  });
+
   it('returns preset default when providers differ', () => {
     const result = makeRunResult('ollama', 'qwen3:30b');
     expect(resolveDefaultAnalyzerModel('openai', result)).toBe('o3');
@@ -203,6 +223,62 @@ describe('calculateKSM edge cases', () => {
 
   it('methodology=101 (over 100), efficacy=0 still caps at 30', () => {
     expect(calculateKSM(101, 0)).toBe(30);
+  });
+});
+
+// =============================================================================
+// extractJson — brace-matching JSON scanner
+// =============================================================================
+
+describe('extractJson', () => {
+  it('passes through clean JSON unchanged', () => {
+    const json = '{"key": "value", "num": 42}';
+    expect(extractJson(json)).toBe(json);
+  });
+
+  it('strips leading explanation text', () => {
+    const input = 'Here is my analysis of the run:\n\n{"score": 75}';
+    expect(extractJson(input)).toBe('{"score": 75}');
+  });
+
+  it('strips trailing explanation text', () => {
+    const input = '{"score": 75}\n\nI hope this helps with your evaluation.';
+    expect(extractJson(input)).toBe('{"score": 75}');
+  });
+
+  it('strips markdown fences', () => {
+    const input = '```json\n{"score": 75}\n```';
+    expect(extractJson(input)).toBe('{"score": 75}');
+  });
+
+  it('handles fences not at start of string', () => {
+    const input = 'Here\'s the result:\n```json\n{"score": 75}\n```';
+    expect(extractJson(input)).toBe('{"score": 75}');
+  });
+
+  it('handles nested objects', () => {
+    const json = '{"outer": {"inner": {"deep": 1}}, "arr": [{}]}';
+    expect(extractJson(`Some preamble\n${json}\nSome postamble`)).toBe(json);
+  });
+
+  it('handles braces inside string values', () => {
+    const json = '{"key": "value with { braces } inside"}';
+    expect(extractJson(json)).toBe(json);
+  });
+
+  it('returns from first brace to end for unclosed JSON', () => {
+    const input = '{"key": "value", "nested": {"open": true';
+    expect(extractJson(input)).toBe(input);
+  });
+
+  it('extracts first JSON object when multiple are present', () => {
+    const input = '{"first": 1}\n{"second": 2}';
+    expect(extractJson(input)).toBe('{"first": 1}');
+  });
+
+  it('returns original text when no braces found', () => {
+    const input = 'no json here at all';
+    expect(extractJson(input)).toBe(input);
   });
 });
 

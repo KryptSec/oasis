@@ -232,18 +232,39 @@ Return ONLY the JSON object, no other text.`;
 // Response Parser
 // =============================================================================
 
+export function extractJson(text: string): string {
+  let s = text.trim();
+
+  // Strip markdown fences anywhere in the response
+  s = s.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```\s*$/, '').trim();
+
+  // Find the outermost { ... } — always run the brace scanner to strip trailing text
+  const start = s.startsWith('{') ? 0 : s.indexOf('{');
+  if (start === -1) return s;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"' && !escape) { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return s.substring(start, i + 1); }
+  }
+  // Unclosed — return from first '{' to end (let JSON.parse report the real error)
+  return s.substring(start);
+}
+
 export async function parseAnalysisResponse(
   response: string,
   runId: string,
   result: RunResult,
-  challengeConfig?: ChallengeConfig
+  challengeConfig?: ChallengeConfig,
+  analyzerModel?: string,
 ): Promise<AnalysisResult> {
-  let jsonStr = response.trim();
-
-  if (jsonStr.startsWith('```json')) jsonStr = jsonStr.slice(7);
-  else if (jsonStr.startsWith('```')) jsonStr = jsonStr.slice(3);
-  if (jsonStr.endsWith('```')) jsonStr = jsonStr.slice(0, -3);
-  jsonStr = jsonStr.trim();
+  const jsonStr = extractJson(response);
 
   try {
     const parsed = AnalysisResponseSchema.parse(JSON.parse(jsonStr));
@@ -251,7 +272,7 @@ export async function parseAnalysisResponse(
     const analysisResult: AnalysisResult = {
       runId,
       analyzedAt: new Date(),
-      analyzerModel: DEFAULT_ANALYZER_MODEL,
+      analyzerModel: analyzerModel || DEFAULT_ANALYZER_MODEL,
       attackChain: {
         phases: parsed.attackChain.phases,
         techniques: parsed.attackChain.techniques,
@@ -342,7 +363,7 @@ export async function parseAnalysisResponse(
     return {
       runId,
       analyzedAt: new Date(),
-      analyzerModel: DEFAULT_ANALYZER_MODEL,
+      analyzerModel: analyzerModel || DEFAULT_ANALYZER_MODEL,
       parseFailed: true,
       attackChain: { phases: [], techniques: [], killChainCoverage: [] },
       narrative: { summary: 'Analysis parsing failed', detailed: `Error: ${error}`, keyFindings: [] },
@@ -447,10 +468,21 @@ export function resolveDefaultAnalyzerModel(analyzerProvider: string, benchmarkR
 
   const preset = resolveProvider(analyzerProvider);
 
-  // Same provider as benchmark — use the benchmark model since we know it's available
+  // Same provider as benchmark — use the benchmark model (user's choice), but
+  // filter out known non-text models that can't do chat completions.
   const benchmarkProvider = normalizeProvider(benchmarkResult.model);
   if (benchmarkProvider === normalizeProvider(analyzerProvider)) {
-    return benchmarkResult.modelVersion || preset?.models[0] || DEFAULT_ANALYZER_MODEL;
+    const NON_TEXT_MODEL_PATTERNS: RegExp[] = [
+      /^grok-imagine-/i,
+      /^dall-e-/i,
+      /^tts-/i,
+      /^whisper-/i,
+      /[-.]embed(ding)?s?[-.:]/i,
+      /^text-embed(ding)?/i,
+    ];
+    const modelName = benchmarkResult.modelVersion || '';
+    const isTextModel = !NON_TEXT_MODEL_PATTERNS.some(p => p.test(modelName));
+    return (isTextModel ? benchmarkResult.modelVersion : null) || preset?.models[0] || DEFAULT_ANALYZER_MODEL;
   }
 
   // Different provider — try preset default, fall back to Claude
@@ -543,7 +575,7 @@ export async function analyzeRun(
     responseText = await callOpenAIAnalyzer(apiKey, baseUrl, analyzerModel, prompt);
   }
 
-  return parseAnalysisResponse(responseText, result.id, result, options.challengeConfig);
+  return parseAnalysisResponse(responseText, result.id, result, options.challengeConfig, analyzerModel);
 }
 
 export async function analyzeExistingRun(
