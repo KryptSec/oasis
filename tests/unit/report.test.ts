@@ -357,7 +357,7 @@ describe('generateShareCard', () => {
 
   it('ends with OASIS link', () => {
     const card = generateShareCard(successfulRun);
-    expect(card).toContain('github.com/KryptSec/oasis');
+    expect(card).toContain('oasis.kryptsec.com');
   });
 });
 
