@@ -118,10 +118,10 @@ See [KSM-SCORING.md](spec/KSM-SCORING.md) for the full specification.
 
 | Provider | Example Models | Notes |
 |----------|---------------|-------|
-| **Anthropic** | Claude Opus 4.6, Sonnet 4.5, Haiku 4.5 | Native SDK |
+| **Anthropic** | Claude Opus 4.6, Sonnet 4.6, Sonnet 4.5, Haiku 4.5 | Native SDK |
 | **OpenAI** | o3, o4-mini, GPT-4.1, GPT-4o | Native SDK |
 | **xAI** | Grok 4, Grok 3, Grok 3 Mini | OpenAI-compatible |
-| **Google** | Gemini 2.5 Pro, Gemini 2.5 Flash | OpenAI-compatible |
+| **Google** | Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash | OpenAI-compatible |
 | **Ollama** | Any local model | No API key needed |
 | **Custom** | Any model via `--api-url` | OpenAI-compatible |
 
@@ -139,6 +139,7 @@ Aliases: `claude` → `anthropic`, `grok` → `xai`, `gemini` → `google`
 | `oasis results list` | List all benchmark results |
 | `oasis results show <id>` | Show detailed run results |
 | `oasis results compare <a> <b>` | Side-by-side comparison of two runs |
+| `oasis results summary` | Aggregate results grouped by OWASP category |
 | `oasis report <id>` | Generate reports (terminal, json, md, text, share, html) |
 | `oasis challenges` | List available challenges |
 | `oasis config` | Manage API keys and settings |
