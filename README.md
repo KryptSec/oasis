@@ -196,17 +196,6 @@ oasis validate challenges/my-challenge
 
 See the full [Challenge Specification](spec/CHALLENGE-SPEC.md) and [existing challenges](https://github.com/kryptsec/oasis-challenges) for examples.
 
-## Verified Runs
-
-For official leaderboard submissions, use verified mode:
-
-```bash
-oasis login
-oasis run --verified -c gatekeeper -m claude-sonnet-4-5-20250929
-```
-
-Verified runs execute on Kryptsec infrastructure for fair, tamper-proof comparison.
-
 ## Development
 
 ```bash
