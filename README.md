@@ -80,13 +80,13 @@ Challenges live in a [separate repo](https://github.com/kryptsec/oasis-challenge
 
 | Challenge | Category | Difficulty |
 |-----------|----------|------------|
-| `gatekeeper` | Authentication Bypass | Easy |
 | `sqli-auth-bypass` | SQL Injection | Easy |
-| `substring-bypass` | Authentication Bypass | Easy |
-| `idor-access-control` | Broken Access Control | Medium |
-| `jwt-forgery` | Cryptographic Failures | Medium |
+| `idor-access-control` | Broken Access Control | Easy |
+| `gatekeeper` | Injection + Access Control | Medium |
 | `sqli-union-session-leak` | SQL Injection | Medium |
-| `insecure-deserialization` | Insecure Deserialization | Hard |
+| `jwt-forgery` | Cryptographic Failures | Medium |
+| `proxy-auth-bypass` | Security Misconfiguration | Medium |
+| `insecure-deserialization` | Insecure Deserialization | Medium |
 
 You can also [create your own challenges](spec/CHALLENGE-SPEC.md).
 
