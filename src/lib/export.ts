@@ -13,7 +13,7 @@ export async function promptExport(
   ksmScore?: number,
 ): Promise<void> {
   console.log();
-  if (!analysis) {
+  if (!analysis || analysis.parseFailed) {
     console.log(colors.gray('  No analysis available — skipping export.'));
     console.log(colors.gray(`  Run analysis first: oasis analyze ${result.id}`));
     console.log(colors.gray(`  Then export via: oasis report ${result.id}`));
