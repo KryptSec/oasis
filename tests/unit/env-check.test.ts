@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import {
   checkDockerRunning,
   ensureDocker,
@@ -15,10 +15,10 @@ import {
 // =============================================================================
 
 vi.mock('child_process', () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
-const mockExecSync = vi.mocked(execSync);
+const mockExecFileSync = vi.mocked(execFileSync);
 
 // Mock Anthropic SDK (dynamic import)
 const mockAnthropicCreate = vi.fn();
@@ -42,20 +42,30 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+/** Helper to match calls by command and first arg */
+function matchCall(cmd: string, firstArg?: string): (call: unknown[]) => boolean {
+  return (call: unknown[]) => {
+    if (call[0] !== cmd) return false;
+    if (firstArg === undefined) return true;
+    const args = call[1] as string[];
+    return args?.[0] === firstArg;
+  };
+}
+
 // =============================================================================
 // checkDockerRunning
 // =============================================================================
 
 describe('checkDockerRunning', () => {
   it('returns ok when docker ps succeeds', () => {
-    mockExecSync.mockReturnValue('CONTAINER ID  IMAGE  ...\n' as any);
+    mockExecFileSync.mockReturnValue('CONTAINER ID  IMAGE  ...\n' as any);
     const result = checkDockerRunning();
     expect(result.ok).toBe(true);
     expect(result.errors).toHaveLength(0);
   });
 
   it('returns error when docker ps throws', () => {
-    mockExecSync.mockImplementation(() => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('Cannot connect to Docker daemon');
     });
     const result = checkDockerRunning();
@@ -64,7 +74,7 @@ describe('checkDockerRunning', () => {
   });
 
   it('includes helpful hints on failure', () => {
-    mockExecSync.mockImplementation(() => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('not running');
     });
     const result = checkDockerRunning();
@@ -89,34 +99,34 @@ describe('ensureDocker', () => {
   });
 
   it('returns immediately when Docker is already running', async () => {
-    mockExecSync.mockReturnValueOnce('' as any); // docker ps succeeds
+    mockExecFileSync.mockReturnValueOnce('' as any); // docker ps succeeds
     const result = await ensureDocker();
     expect(result.ok).toBe(true);
     expect(result.autoStarted).toBe(false);
-    expect(mockExecSync).toHaveBeenCalledTimes(1);
+    expect(mockExecFileSync).toHaveBeenCalledTimes(1);
   });
 
   it('returns error on non-macOS when Docker is not running', async () => {
     setPlatform('linux');
-    mockExecSync.mockImplementation(() => { throw new Error('not running'); });
+    mockExecFileSync.mockImplementation(() => { throw new Error('not running'); });
     const result = await ensureDocker();
     expect(result.ok).toBe(false);
     expect(result.autoStarted).toBe(false);
     expect(result.errors).toContain('Docker is not running or not accessible');
     expect(result.hints.some((h) => h.includes('Start Docker Desktop'))).toBe(true);
-    // Should only have called docker ps once (no open command)
-    expect(mockExecSync).toHaveBeenCalledTimes(1);
+    expect(mockExecFileSync).toHaveBeenCalledTimes(1);
   });
 
   it('auto-starts Docker Desktop on macOS and polls until ready', async () => {
     setPlatform('darwin');
     let callCount = 0;
-    mockExecSync.mockImplementation((cmd: unknown) => {
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
       callCount++;
-      const cmdStr = cmd as string;
-      if (cmdStr === 'open --background -a Docker') return '' as any;
-      // First docker ps fails, second succeeds (after polling)
-      if (cmdStr === 'docker ps') {
+      const argArr = args as string[];
+      // open --background -a Docker
+      if (cmd === 'open') return '' as any;
+      // docker ps — fail first two, then succeed
+      if (cmd === 'docker' && argArr[0] === 'ps') {
         if (callCount <= 2) throw new Error('not running');
         return '' as any;
       }
@@ -130,10 +140,9 @@ describe('ensureDocker', () => {
 
   it('returns error when open command fails on macOS', async () => {
     setPlatform('darwin');
-    mockExecSync.mockImplementation((cmd: unknown) => {
-      const cmdStr = cmd as string;
-      if (cmdStr === 'docker ps') throw new Error('not running');
-      if (cmdStr === 'open --background -a Docker') throw new Error('app not found');
+    mockExecFileSync.mockImplementation((cmd: unknown) => {
+      if (cmd === 'docker') throw new Error('not running');
+      if (cmd === 'open') throw new Error('app not found');
       throw new Error('unexpected');
     });
 
@@ -145,9 +154,8 @@ describe('ensureDocker', () => {
 
   it('returns timeout error when Docker never becomes ready', async () => {
     setPlatform('darwin');
-    mockExecSync.mockImplementation((cmd: unknown) => {
-      const cmdStr = cmd as string;
-      if (cmdStr === 'open --background -a Docker') return '' as any;
+    mockExecFileSync.mockImplementation((cmd: unknown) => {
+      if (cmd === 'open') return '' as any;
       throw new Error('not running');
     });
 
@@ -159,12 +167,11 @@ describe('ensureDocker', () => {
   it('calls onStatus callback with progress messages', async () => {
     setPlatform('darwin');
     let callCount = 0;
-    mockExecSync.mockImplementation((cmd: unknown) => {
+    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
       callCount++;
-      const cmdStr = cmd as string;
-      if (cmdStr === 'open --background -a Docker') return '' as any;
-      if (cmdStr === 'docker ps') {
-        // Fail first check, succeed after first poll
+      const argArr = args as string[];
+      if (cmd === 'open') return '' as any;
+      if (cmd === 'docker' && argArr[0] === 'ps') {
         if (callCount <= 2) throw new Error('not running');
         return '' as any;
       }
@@ -189,7 +196,7 @@ describe('checkContainersRunning', () => {
   const containerName = 'gatekeeper-kali-1';
 
   it('returns ok when both containers are Up', () => {
-    mockExecSync.mockReturnValue(
+    mockExecFileSync.mockReturnValue(
       'gatekeeper-target-1\tUp 5 minutes\ngatekeeper-kali-1\tUp 5 minutes\n' as any
     );
     const result = checkContainersRunning(challengeId, containerName);
@@ -198,14 +205,14 @@ describe('checkContainersRunning', () => {
   });
 
   it('returns error when target container is missing', () => {
-    mockExecSync.mockReturnValue('gatekeeper-kali-1\tUp 5 minutes\n' as any);
+    mockExecFileSync.mockReturnValue('gatekeeper-kali-1\tUp 5 minutes\n' as any);
     const result = checkContainersRunning(challengeId, containerName);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('gatekeeper-target-1'))).toBe(true);
   });
 
   it('returns error when target container is Exited', () => {
-    mockExecSync.mockReturnValue(
+    mockExecFileSync.mockReturnValue(
       'gatekeeper-target-1\tExited (1) 2 minutes ago\ngatekeeper-kali-1\tUp 5 minutes\n' as any
     );
     const result = checkContainersRunning(challengeId, containerName);
@@ -216,14 +223,14 @@ describe('checkContainersRunning', () => {
   });
 
   it('returns error when kali container is missing', () => {
-    mockExecSync.mockReturnValue('gatekeeper-target-1\tUp 5 minutes\n' as any);
+    mockExecFileSync.mockReturnValue('gatekeeper-target-1\tUp 5 minutes\n' as any);
     const result = checkContainersRunning(challengeId, containerName);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('gatekeeper-kali-1'))).toBe(true);
   });
 
   it('returns error when kali container is Exited', () => {
-    mockExecSync.mockReturnValue(
+    mockExecFileSync.mockReturnValue(
       'gatekeeper-target-1\tUp 5 minutes\ngatekeeper-kali-1\tExited (0) 1 minute ago\n' as any
     );
     const result = checkContainersRunning(challengeId, containerName);
@@ -233,8 +240,8 @@ describe('checkContainersRunning', () => {
     ).toBe(true);
   });
 
-  it('returns error when execSync throws', () => {
-    mockExecSync.mockImplementation(() => {
+  it('returns error when execFileSync throws', () => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('docker failed');
     });
     const result = checkContainersRunning(challengeId, containerName);
@@ -252,49 +259,42 @@ describe('checkTargetReachable', () => {
   const url = 'http://target:5000';
 
   it('returns ok when curl returns 200', () => {
-    mockExecSync.mockReturnValue('200' as any);
+    mockExecFileSync.mockReturnValue('200' as any);
     const result = checkTargetReachable(container, url);
     expect(result.ok).toBe(true);
   });
 
   it('returns ok when curl returns 404 (connected)', () => {
-    mockExecSync.mockReturnValue('404' as any);
+    mockExecFileSync.mockReturnValue('404' as any);
     const result = checkTargetReachable(container, url);
     expect(result.ok).toBe(true);
   });
 
   it('returns error when curl returns 000 (not reachable)', () => {
-    mockExecSync.mockReturnValue('000' as any);
+    mockExecFileSync.mockReturnValue('000' as any);
     const result = checkTargetReachable(container, url);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('not reachable'))).toBe(true);
   });
 
-  it('returns error when curl returns FAIL', () => {
-    mockExecSync.mockReturnValue('FAIL' as any);
-    const result = checkTargetReachable(container, url);
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('not reachable'))).toBe(true);
-  });
-
-  it('returns error when execSync throws (curl missing)', () => {
-    mockExecSync.mockImplementation(() => {
+  it('returns error when curl throws (treated as FAIL)', () => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('exec failed');
     });
     const result = checkTargetReachable(container, url);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('curl may be missing'))).toBe(true);
+    expect(result.errors.some((e) => e.includes('not reachable'))).toBe(true);
   });
 
-  it('shell-escapes containerName and targetUrl in exec call', () => {
-    mockExecSync.mockReturnValue('200' as any);
+  it('passes containerName and targetUrl as separate arguments (no shell escaping needed)', () => {
+    mockExecFileSync.mockReturnValue('200' as any);
     checkTargetReachable("evil'name", "http://x';rm -rf /");
-    const cmd = mockExecSync.mock.calls[0][0] as string;
-    // Values should be wrapped in single quotes with escaped internal quotes
-    expect(cmd).toContain("'evil'\\''name'");
-    expect(cmd).toContain("'http://x'\\''");
-    // The injected command should be inside single quotes, not a bare shell token
-    expect(cmd).not.toMatch(/[^'];\s*rm\s/);
+    const call = mockExecFileSync.mock.calls[0];
+    const args = call[1] as string[];
+    // With execFileSync, arguments are passed directly — no shell involved
+    expect(call[0]).toBe('docker');
+    expect(args).toContain("evil'name");
+    expect(args).toContain("http://x';rm -rf /");
   });
 });
 
@@ -306,14 +306,14 @@ describe('checkKaliTools', () => {
   const container = 'gatekeeper-kali-1';
 
   it('returns ok when all tools are found', () => {
-    mockExecSync.mockReturnValue('/usr/bin/tool' as any);
+    mockExecFileSync.mockReturnValue('/usr/bin/tool' as any);
     const result = checkKaliTools(container);
     expect(result.ok).toBe(true);
     expect(result.errors).toHaveLength(0);
   });
 
   it('returns error when one tool is missing', () => {
-    mockExecSync
+    mockExecFileSync
       .mockReturnValueOnce('/usr/bin/curl' as any) // curl found
       .mockImplementationOnce(() => {
         throw new Error('not found');
@@ -327,7 +327,7 @@ describe('checkKaliTools', () => {
   });
 
   it('returns multiple errors and hints when multiple tools missing', () => {
-    mockExecSync.mockImplementation(() => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('not found');
     });
     const result = checkKaliTools(container);
@@ -337,12 +337,13 @@ describe('checkKaliTools', () => {
     expect(result.hints.some((h) => h.includes('Rebuild'))).toBe(true);
   });
 
-  it('shell-escapes containerName in exec call', () => {
-    mockExecSync.mockReturnValue('/usr/bin/tool' as any);
+  it('passes containerName as a separate argument (no shell escaping needed)', () => {
+    mockExecFileSync.mockReturnValue('/usr/bin/tool' as any);
     checkKaliTools("evil'name");
-    for (const call of mockExecSync.mock.calls) {
-      const cmd = call[0] as string;
-      expect(cmd).toContain("'evil'\\''name'");
+    for (const call of mockExecFileSync.mock.calls) {
+      const args = call[1] as string[];
+      // Container name is a discrete array element, not interpolated into a shell string
+      expect(args).toContain("evil'name");
     }
   });
 });
@@ -465,17 +466,17 @@ describe('runPreflightChecks', () => {
 
   function mockAllChecksPass() {
     // docker ps
-    mockExecSync.mockReturnValueOnce('' as any);
+    mockExecFileSync.mockReturnValueOnce('' as any);
     // docker ps -a (containers)
-    mockExecSync.mockReturnValueOnce(
+    mockExecFileSync.mockReturnValueOnce(
       'gatekeeper-target-1\tUp 5 minutes\ngatekeeper-kali-1\tUp 5 minutes\n' as any
     );
     // curl check
-    mockExecSync.mockReturnValueOnce('200' as any);
+    mockExecFileSync.mockReturnValueOnce('200' as any);
     // which curl, which wget, which python3
-    mockExecSync.mockReturnValueOnce('/usr/bin/curl' as any);
-    mockExecSync.mockReturnValueOnce('/usr/bin/wget' as any);
-    mockExecSync.mockReturnValueOnce('/usr/bin/python3' as any);
+    mockExecFileSync.mockReturnValueOnce('/usr/bin/curl' as any);
+    mockExecFileSync.mockReturnValueOnce('/usr/bin/wget' as any);
+    mockExecFileSync.mockReturnValueOnce('/usr/bin/python3' as any);
   }
 
   it('returns ok when all checks pass', () => {
@@ -485,7 +486,7 @@ describe('runPreflightChecks', () => {
   });
 
   it('returns docker error on early failure (docker not running)', () => {
-    mockExecSync.mockImplementation(() => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('docker not found');
     });
     const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);
@@ -495,9 +496,9 @@ describe('runPreflightChecks', () => {
 
   it('returns container error when docker ok but containers fail', () => {
     // docker ps succeeds
-    mockExecSync.mockReturnValueOnce('' as any);
+    mockExecFileSync.mockReturnValueOnce('' as any);
     // docker ps -a returns no containers
-    mockExecSync.mockReturnValueOnce('' as any);
+    mockExecFileSync.mockReturnValueOnce('' as any);
     const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('not found'))).toBe(true);
@@ -505,15 +506,15 @@ describe('runPreflightChecks', () => {
 
   it('returns tools error when other checks pass but tools missing', () => {
     // docker ps
-    mockExecSync.mockReturnValueOnce('' as any);
+    mockExecFileSync.mockReturnValueOnce('' as any);
     // docker ps -a (containers)
-    mockExecSync.mockReturnValueOnce(
+    mockExecFileSync.mockReturnValueOnce(
       'gatekeeper-target-1\tUp 5 minutes\ngatekeeper-kali-1\tUp 5 minutes\n' as any
     );
     // curl check succeeds
-    mockExecSync.mockReturnValueOnce('200' as any);
+    mockExecFileSync.mockReturnValueOnce('200' as any);
     // all tools missing
-    mockExecSync.mockImplementation(() => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error('not found');
     });
     const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);

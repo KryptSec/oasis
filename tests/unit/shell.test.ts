@@ -1,11 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { shellEscape } from '../../src/lib/shell.js';
 
-// ---------------------------------------------------------------------------
-// POSIX (default on macOS/Linux) — single-quote wrapping
-// ---------------------------------------------------------------------------
-
-describe('shellEscape (posix)', () => {
+describe('shellEscape', () => {
   it('wraps plain strings in single quotes', () => {
     expect(shellEscape('hello')).toBe("'hello'");
   });
@@ -59,54 +55,5 @@ describe('shellEscape (posix)', () => {
 
   it('handles multiple consecutive single quotes', () => {
     expect(shellEscape("'''")).toBe("''\\'''\\'''\\'''");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Windows (cmd.exe) — double-quote wrapping
-// ---------------------------------------------------------------------------
-
-describe('shellEscape (win32)', () => {
-  const originalPlatform = process.platform;
-
-  afterEach(() => {
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
-  });
-
-  function asWindows() {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-  }
-
-  it('wraps plain strings in double quotes', () => {
-    asWindows();
-    expect(shellEscape('hello')).toBe('"hello"');
-  });
-
-  it('does not add single quotes on Windows', () => {
-    asWindows();
-    const result = shellEscape('ghcr.io/kryptsec/sqli-auth-bypass:latest');
-    expect(result).toBe('"ghcr.io/kryptsec/sqli-auth-bypass:latest"');
-    expect(result).not.toContain("'");
-  });
-
-  it('escapes internal double quotes', () => {
-    asWindows();
-    expect(shellEscape('say "hello"')).toBe('"say \\"hello\\""');
-  });
-
-  it('escapes percent signs to avoid cmd.exe variable expansion', () => {
-    asWindows();
-    expect(shellEscape('100%')).toBe('"100%%"');
-  });
-
-  it('handles empty string', () => {
-    asWindows();
-    expect(shellEscape('')).toBe('""');
-  });
-
-  it('neutralizes ampersand chaining', () => {
-    asWindows();
-    const result = shellEscape('foo & del /q *');
-    expect(result).toBe('"foo & del /q *"');
   });
 });
