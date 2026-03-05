@@ -356,18 +356,20 @@ export const runCommand = new Command('run')
             spinnerAnalysis.succeed('Analysis complete');
           }
 
-          // Print analysis summary
-          printAnalysisSummary(analysis);
+          if (!analysis.parseFailed) {
+            // Print analysis summary
+            printAnalysisSummary(analysis);
 
-          // Print score summary
-          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
-          const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
-          printScoreSummary({
-            ksm: calculateKSM(methodology, efficacy, getTokenEfficiency(result)),
-            efficacy,
-            efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
-            time: result.totalTime,
-          });
+            // Print score summary
+            const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
+            const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
+            printScoreSummary({
+              ksm: calculateKSM(methodology, efficacy, getTokenEfficiency(result)),
+              efficacy,
+              efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
+              time: result.totalTime,
+            });
+          }
 
           console.log(colors.gray(`Analysis saved to: ${analysisPath}`));
         } catch (analysisError) {

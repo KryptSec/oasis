@@ -83,8 +83,10 @@ async function showRunDetail(entry: LoadedResult): Promise<void> {
 
   switch (action) {
     case 'analysis':
-      if (analysis) {
+      if (analysis && !analysis.parseFailed) {
         printAnalysisSummary(analysis);
+      } else if (analysis?.parseFailed) {
+        console.log(colors.gray('  Analysis could not be parsed. Retry with: oasis analyze ' + result.id));
       }
       break;
     case 'report':

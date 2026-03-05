@@ -559,17 +559,19 @@ export async function runBenchmarkFlow(): Promise<void> {
             spinnerAnalysis.succeed('Analysis complete');
           }
 
-          printAnalysisSummary(analysis);
+          if (!analysis.parseFailed) {
+            printAnalysisSummary(analysis);
 
-          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
-          const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
-          runKsmScore = calculateKSM(methodology, efficacy, getTokenEfficiency(result));
-          printScoreSummary({
-            ksm: runKsmScore,
-            efficacy,
-            efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
-            time: result.totalTime,
-          });
+            const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
+            const efficacy = calculateEfficacy(result.challenge, result.modelVersion, getResultsDir());
+            runKsmScore = calculateKSM(methodology, efficacy, getTokenEfficiency(result));
+            printScoreSummary({
+              ksm: runKsmScore,
+              efficacy,
+              efficiency: analysis.rubricScore?.percentage ?? analysis.strategy.exploitEfficiency ?? 0,
+              time: result.totalTime,
+            });
+          }
 
           console.log(colors.gray(`  Analysis saved to: ${analysisPath}`));
         } catch (analysisError) {
