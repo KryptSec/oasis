@@ -160,13 +160,17 @@ export const analyzeCommand = new Command('analyze')
           spinner.succeed(`Analysis complete for ${id}`);
         }
 
-        // Print summary for single runs
-        if (runIds.length === 1) {
-          printAnalysisSummary(analysis);
-        } else {
-          const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
-          const score = calculateKSM(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults), getTokenEfficiency(result));
-          console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
+        if (!analysis.parseFailed) {
+          // Print summary for single runs
+          if (runIds.length === 1) {
+            printAnalysisSummary(analysis);
+          } else {
+            const methodology = analysis.rubricScore?.percentage ?? analysis.strategy.overallScore;
+            const score = calculateKSM(methodology, calculateEfficacyFromResults(result.challenge, result.modelVersion, allResults), getTokenEfficiency(result));
+            console.log(colors.gray(`  Score: ${score}/100 | Approach: ${analysis.behavior.approach}`));
+          }
+        } else if (runIds.length > 1) {
+          console.log(colors.gray(`  Score: N/A (parse failed)`));
         }
       } catch (error) {
         if (error instanceof QuotaExceededError) {
