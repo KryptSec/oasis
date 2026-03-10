@@ -4,9 +4,8 @@
  * health-checking, and cleanup for both registry and local modes.
  */
 
-import { execSync } from 'child_process';
-import { shellEscape } from './shell.js';
-import { DOCKER_WAIT_TIMEOUT, DOCKER_POLL_INTERVAL } from './constants.js';
+import { execFileSync } from 'child_process';
+import { DOCKER_WAIT_TIMEOUT } from './constants.js';
 
 export interface ContainerSpec {
   challengeId: string;
@@ -15,6 +14,11 @@ export interface ContainerSpec {
   network: string;
   kaliContainerName: string;
   targetContainerName: string;
+}
+
+/** Synchronous sleep that works cross-platform (no shell, no `sleep` binary). */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 /**
@@ -28,7 +32,7 @@ export function pullImage(image: string, onProgress?: (line: string) => void): b
   }
 
   try {
-    execSync(`docker pull ${shellEscape(image)}`, {
+    execFileSync('docker', ['pull', image], {
       stdio: onProgress ? 'inherit' : 'pipe',
       encoding: 'utf-8',
     });
@@ -45,7 +49,7 @@ export function pullImage(image: string, onProgress?: (line: string) => void): b
   if (onProgress) {
     onProgress(`Pulling ${image} (linux/amd64 fallback)...`);
   }
-  execSync(`docker pull --platform linux/amd64 ${shellEscape(image)}`, {
+  execFileSync('docker', ['pull', '--platform', 'linux/amd64', image], {
     stdio: onProgress ? 'inherit' : 'pipe',
     encoding: 'utf-8',
   });
@@ -57,12 +61,12 @@ export function pullImage(image: string, onProgress?: (line: string) => void): b
  */
 export function ensureNetwork(name: string): void {
   try {
-    execSync(`docker network inspect ${shellEscape(name)}`, {
+    execFileSync('docker', ['network', 'inspect', name], {
       stdio: 'pipe',
       encoding: 'utf-8',
     });
   } catch {
-    execSync(`docker network create ${shellEscape(name)}`, {
+    execFileSync('docker', ['network', 'create', name], {
       stdio: 'pipe',
       encoding: 'utf-8',
     });
@@ -83,24 +87,23 @@ export function startContainers(spec: ContainerSpec, platforms?: PlatformOverrid
   cleanupStale(spec);
   ensureNetwork(spec.network);
 
-  const targetPlatformFlag = platforms?.target ? `--platform ${shellEscape(platforms.target)} ` : '';
-  const kaliPlatformFlag = platforms?.kali ? `--platform ${shellEscape(platforms.kali)} ` : '';
-
   // Start target container
-  execSync(
-    `docker run -d ${targetPlatformFlag}--name ${shellEscape(spec.targetContainerName)} ` +
-    `--hostname target --network ${shellEscape(spec.network)} ` +
-    `${shellEscape(spec.targetImage)}`,
-    { stdio: 'pipe', encoding: 'utf-8' }
-  );
+  const targetArgs = ['run', '-d'];
+  if (platforms?.target) targetArgs.push('--platform', platforms.target);
+  targetArgs.push('--name', spec.targetContainerName);
+  targetArgs.push('--hostname', 'target');
+  targetArgs.push('--network', spec.network);
+  targetArgs.push(spec.targetImage);
+  execFileSync('docker', targetArgs, { stdio: 'pipe', encoding: 'utf-8' });
 
   // Start kali container
-  execSync(
-    `docker run -d ${kaliPlatformFlag}--name ${shellEscape(spec.kaliContainerName)} ` +
-    `--hostname kali --network ${shellEscape(spec.network)} ` +
-    `${shellEscape(spec.kaliImage)} sleep infinity`,
-    { stdio: 'pipe', encoding: 'utf-8' }
-  );
+  const kaliArgs = ['run', '-d'];
+  if (platforms?.kali) kaliArgs.push('--platform', platforms.kali);
+  kaliArgs.push('--name', spec.kaliContainerName);
+  kaliArgs.push('--hostname', 'kali');
+  kaliArgs.push('--network', spec.network);
+  kaliArgs.push(spec.kaliImage, 'sleep', 'infinity');
+  execFileSync('docker', kaliArgs, { stdio: 'pipe', encoding: 'utf-8' });
 }
 
 /**
@@ -134,18 +137,17 @@ export function waitForTarget(
   timeoutMs = DOCKER_WAIT_TIMEOUT
 ): void {
   const start = Date.now();
-  const pollInterval = DOCKER_POLL_INTERVAL;
 
   while (Date.now() - start < timeoutMs) {
     try {
-      execSync(
-        `docker exec ${shellEscape(kaliContainer)} curl -sf ${shellEscape(targetUrl)}`,
+      execFileSync(
+        'docker', ['exec', kaliContainer, 'curl', '-sf', targetUrl],
         { stdio: 'pipe', encoding: 'utf-8', timeout: 5000 }
       );
       return; // Success
     } catch {
       // Not ready yet — wait and retry
-      execSync(`sleep 2`, { stdio: 'pipe' });
+      sleepSync(2000);
     }
   }
 
@@ -159,8 +161,8 @@ export function waitForTarget(
  */
 export function cleanup(spec: ContainerSpec): void {
   try {
-    execSync(
-      `docker rm -f ${shellEscape(spec.targetContainerName)} ${shellEscape(spec.kaliContainerName)}`,
+    execFileSync(
+      'docker', ['rm', '-f', spec.targetContainerName, spec.kaliContainerName],
       { stdio: 'pipe', encoding: 'utf-8' }
     );
   } catch {
@@ -168,7 +170,7 @@ export function cleanup(spec: ContainerSpec): void {
   }
 
   try {
-    execSync(`docker network rm ${shellEscape(spec.network)}`, {
+    execFileSync('docker', ['network', 'rm', spec.network], {
       stdio: 'pipe',
       encoding: 'utf-8',
     });
@@ -182,8 +184,8 @@ export function cleanup(spec: ContainerSpec): void {
  */
 export function cleanupStale(spec: ContainerSpec): void {
   try {
-    execSync(
-      `docker rm -f ${shellEscape(spec.targetContainerName)} ${shellEscape(spec.kaliContainerName)} 2>/dev/null`,
+    execFileSync(
+      'docker', ['rm', '-f', spec.targetContainerName, spec.kaliContainerName],
       { stdio: 'pipe', encoding: 'utf-8' }
     );
   } catch {
@@ -195,7 +197,7 @@ export function cleanupStale(spec: ContainerSpec): void {
  * Start containers from a docker-compose.yml in the given directory.
  */
 export function startFromCompose(challengeDir: string): void {
-  execSync(`docker compose -f ${shellEscape(challengeDir)}/docker-compose.yml up -d --build`, {
+  execFileSync('docker', ['compose', '-f', `${challengeDir}/docker-compose.yml`, 'up', '-d', '--build'], {
     stdio: 'inherit',
     encoding: 'utf-8',
   });
@@ -205,7 +207,7 @@ export function startFromCompose(challengeDir: string): void {
  * Stop and remove containers from a docker-compose.yml in the given directory.
  */
 export function stopFromCompose(challengeDir: string): void {
-  execSync(`docker compose -f ${shellEscape(challengeDir)}/docker-compose.yml down`, {
+  execFileSync('docker', ['compose', '-f', `${challengeDir}/docker-compose.yml`, 'down'], {
     stdio: 'pipe',
     encoding: 'utf-8',
   });

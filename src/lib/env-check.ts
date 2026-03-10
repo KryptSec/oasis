@@ -3,8 +3,7 @@
  * Validates Docker, containers, and connectivity before running benchmarks.
  */
 
-import { execSync } from 'child_process';
-import { shellEscape } from './shell.js';
+import { execFileSync } from 'child_process';
 import { DOCKER_STARTUP_POLL } from './constants.js';
 import { ConfigError } from './errors.js';
 import { getErrorStatus } from './retry.js';
@@ -32,7 +31,7 @@ export function checkDockerRunning(): EnvCheckResult {
   const hints: string[] = [];
 
   try {
-    execSync('docker ps', { encoding: 'utf-8', stdio: 'pipe' });
+    execFileSync('docker', ['ps'], { encoding: 'utf-8', stdio: 'pipe' });
     return { ok: true, errors: [], hints: [] };
   } catch {
     errors.push('Docker is not running or not accessible');
@@ -51,7 +50,7 @@ export async function ensureDocker(
 ): Promise<DockerStartResult> {
   // Check if docker is already running
   try {
-    execSync('docker ps', { encoding: 'utf-8', stdio: 'pipe' });
+    execFileSync('docker', ['ps'], { encoding: 'utf-8', stdio: 'pipe' });
     return { ok: true, autoStarted: false, errors: [], hints: [] };
   } catch {
     // Docker not running — try to auto-start on macOS
@@ -72,7 +71,7 @@ export async function ensureDocker(
   // macOS: try to launch Docker Desktop
   onStatus?.('Starting Docker Desktop...');
   try {
-    execSync('open --background -a Docker', { stdio: 'pipe' });
+    execFileSync('open', ['--background', '-a', 'Docker'], { stdio: 'pipe' });
   } catch {
     return {
       ok: false,
@@ -95,7 +94,7 @@ export async function ensureDocker(
     onStatus?.(`Waiting for Docker to be ready... (${elapsed}s)`);
 
     try {
-      execSync('docker ps', { encoding: 'utf-8', stdio: 'pipe' });
+      execFileSync('docker', ['ps'], { encoding: 'utf-8', stdio: 'pipe' });
       return { ok: true, autoStarted: true, errors: [], hints: [] };
     } catch {
       // Not ready yet
@@ -128,8 +127,8 @@ export function checkContainersRunning(
   const kaliContainer = containerName; // e.g. gatekeeper-kali-1
 
   try {
-    const out = execSync(
-      `docker ps -a --format "{{.Names}}\t{{.Status}}"`,
+    const out = execFileSync(
+      'docker', ['ps', '-a', '--format', '{{.Names}}\t{{.Status}}'],
       { encoding: 'utf-8', stdio: 'pipe' }
     );
 
@@ -184,14 +183,16 @@ export function checkTargetReachable(
   const hints: string[] = [];
 
   try {
-    // Extract host:port from URL (e.g. http://target:5000 -> target:5000)
-    const urlMatch = targetUrl.match(/^(?:https?:\/\/)?([^/]+)/);
-    const hostPort = urlMatch ? urlMatch[1] : targetUrl.replace(/^https?:\/\//, '');
-
-    const result = execSync(
-      `docker exec ${shellEscape(containerName)} curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 ${shellEscape(targetUrl)} 2>/dev/null || echo "FAIL"`,
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
+    let result: string;
+    try {
+      result = execFileSync(
+        'docker',
+        ['exec', containerName, 'curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', '--connect-timeout', '5', targetUrl],
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+    } catch {
+      result = 'FAIL';
+    }
 
     if (result === 'FAIL' || result === '000') {
       errors.push(`Target ${targetUrl} is not reachable from Kali container`);
@@ -224,8 +225,8 @@ export function checkKaliTools(containerName: string): EnvCheckResult {
 
   for (const tool of REQUIRED_KALI_TOOLS) {
     try {
-      execSync(
-        `docker exec ${shellEscape(containerName)} which ${tool} 2>/dev/null`,
+      execFileSync(
+        'docker', ['exec', containerName, 'which', tool],
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch {
@@ -351,7 +352,7 @@ export async function checkApiKey(
  */
 export function runPreflightChecks(
   challengeId: string,
-  challengeDir: string,
+  _challengeDir: string,
   containerName: string,
   targetUrl: string
 ): EnvCheckResult {
