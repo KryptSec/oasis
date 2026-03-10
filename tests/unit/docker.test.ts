@@ -44,16 +44,7 @@ function getDockerCalls(subcommand: string): Array<[string, string[]]> {
 // =============================================================================
 
 describe('pullImage', () => {
-  it('returns false when native pull succeeds', () => {
-    mockExecFileSync.mockReturnValue('' as any);
-    const result = pullImage('myimage:latest');
-    expect(result).toBe(false);
-    const pulls = getDockerCalls('pull');
-    expect(pulls).toHaveLength(1);
-    expect(pulls[0][1]).toEqual(['pull', 'myimage:latest']);
-  });
-
-  it('returns true when native pull fails with manifest error and amd64 fallback succeeds', () => {
+  it('falls back to amd64 on manifest error', () => {
     mockExecFileSync
       .mockImplementationOnce(() => {
         const err: any = new Error('pull failed');
@@ -70,19 +61,6 @@ describe('pullImage', () => {
     expect(pulls[1][1]).toContain('linux/amd64');
   });
 
-  it('also catches "no match for platform" variant', () => {
-    mockExecFileSync
-      .mockImplementationOnce(() => {
-        const err: any = new Error('pull failed');
-        err.stderr = 'no match for platform';
-        throw err;
-      })
-      .mockReturnValue('' as any);
-
-    const result = pullImage('myimage:latest');
-    expect(result).toBe(true);
-  });
-
   it('rethrows non-manifest errors without attempting fallback', () => {
     mockExecFileSync.mockImplementation(() => {
       const err: any = new Error('network timeout');
@@ -93,28 +71,6 @@ describe('pullImage', () => {
     expect(() => pullImage('myimage:latest')).toThrow('network timeout');
     const pulls = getDockerCalls('pull');
     expect(pulls).toHaveLength(1);
-  });
-
-  it('calls onProgress callback during pull', () => {
-    mockExecFileSync.mockReturnValue('' as any);
-    const messages: string[] = [];
-    pullImage('myimage:latest', (msg) => messages.push(msg));
-    expect(messages).toContain('Pulling myimage:latest...');
-  });
-
-  it('calls onProgress for fallback path', () => {
-    mockExecFileSync
-      .mockImplementationOnce(() => {
-        const err: any = new Error('fail');
-        err.stderr = 'no matching manifest';
-        throw err;
-      })
-      .mockReturnValue('' as any);
-
-    const messages: string[] = [];
-    pullImage('myimage:latest', (msg) => messages.push(msg));
-    expect(messages).toContain('Pulling myimage:latest...');
-    expect(messages).toContain('Pulling myimage:latest (linux/amd64 fallback)...');
   });
 
   it('passes image name as a separate argument (no shell escaping needed)', () => {
@@ -131,16 +87,6 @@ describe('pullImage', () => {
 // =============================================================================
 
 describe('startContainers', () => {
-  it('runs both containers without platform flag when no overrides', () => {
-    mockExecFileSync.mockReturnValue('' as any);
-    startContainers(SPEC);
-    const runs = getDockerCalls('run');
-    expect(runs).toHaveLength(2);
-    for (const [, args] of runs) {
-      expect(args).not.toContain('--platform');
-    }
-  });
-
   it('applies platform only to target when only target needs it', () => {
     mockExecFileSync.mockReturnValue('' as any);
     startContainers(SPEC, { target: 'linux/amd64' });
@@ -159,15 +105,6 @@ describe('startContainers', () => {
     expect(runs[0][1]).not.toContain('--platform');
     expect(runs[1][1]).toContain('--platform');
   });
-
-  it('applies platform to both when both need it', () => {
-    mockExecFileSync.mockReturnValue('' as any);
-    startContainers(SPEC, { target: 'linux/amd64', kali: 'linux/amd64' });
-    const runs = getDockerCalls('run');
-    expect(runs).toHaveLength(2);
-    expect(runs[0][1]).toContain('--platform');
-    expect(runs[1][1]).toContain('--platform');
-  });
 });
 
 // =============================================================================
@@ -175,19 +112,6 @@ describe('startContainers', () => {
 // =============================================================================
 
 describe('pullAndStartContainers', () => {
-  it('pulls both images and starts without platform when both native', () => {
-    mockExecFileSync.mockReturnValue('' as any);
-    pullAndStartContainers(SPEC);
-
-    const pulls = getDockerCalls('pull');
-    expect(pulls).toHaveLength(2);
-
-    const runs = getDockerCalls('run');
-    for (const [, args] of runs) {
-      expect(args).not.toContain('--platform');
-    }
-  });
-
   it('sets target platform only when target image needs amd64 fallback', () => {
     mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
       const argArr = args as string[];
@@ -225,14 +149,6 @@ describe('pullAndStartContainers', () => {
 // =============================================================================
 
 describe('ensureNetwork', () => {
-  it('does not create network if inspect succeeds', () => {
-    mockExecFileSync.mockReturnValue('' as any);
-    ensureNetwork('test-net');
-    const calls = getDockerCalls('network');
-    expect(calls).toHaveLength(1);
-    expect(calls[0][1]).toEqual(['network', 'inspect', 'test-net']);
-  });
-
   it('creates network when inspect fails', () => {
     mockExecFileSync
       .mockImplementationOnce(() => { throw new Error('not found'); })

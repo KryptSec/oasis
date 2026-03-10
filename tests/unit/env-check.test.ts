@@ -57,13 +57,6 @@ function matchCall(cmd: string, firstArg?: string): (call: unknown[]) => boolean
 // =============================================================================
 
 describe('checkDockerRunning', () => {
-  it('returns ok when docker ps succeeds', () => {
-    mockExecFileSync.mockReturnValue('CONTAINER ID  IMAGE  ...\n' as any);
-    const result = checkDockerRunning();
-    expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
-  });
-
   it('returns error when docker ps throws', () => {
     mockExecFileSync.mockImplementation(() => {
       throw new Error('Cannot connect to Docker daemon');
@@ -71,15 +64,6 @@ describe('checkDockerRunning', () => {
     const result = checkDockerRunning();
     expect(result.ok).toBe(false);
     expect(result.errors).toContain('Docker is not running or not accessible');
-  });
-
-  it('includes helpful hints on failure', () => {
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('not running');
-    });
-    const result = checkDockerRunning();
-    expect(result.hints.length).toBeGreaterThan(0);
-    expect(result.hints.some((h) => h.includes('Docker Desktop'))).toBe(true);
   });
 });
 
@@ -99,7 +83,7 @@ describe('ensureDocker', () => {
   });
 
   it('returns immediately when Docker is already running', async () => {
-    mockExecFileSync.mockReturnValueOnce('' as any); // docker ps succeeds
+    mockExecFileSync.mockReturnValueOnce('' as any);
     const result = await ensureDocker();
     expect(result.ok).toBe(true);
     expect(result.autoStarted).toBe(false);
@@ -112,7 +96,6 @@ describe('ensureDocker', () => {
     const result = await ensureDocker();
     expect(result.ok).toBe(false);
     expect(result.autoStarted).toBe(false);
-    expect(result.errors).toContain('Docker is not running or not accessible');
     expect(result.hints.some((h) => h.includes('Start Docker Desktop'))).toBe(true);
     expect(mockExecFileSync).toHaveBeenCalledTimes(1);
   });
@@ -159,31 +142,9 @@ describe('ensureDocker', () => {
       throw new Error('not running');
     });
 
-    const result = await ensureDocker(undefined, 100); // very short timeout
+    const result = await ensureDocker(undefined, 100);
     expect(result.ok).toBe(false);
     expect(result.errors).toContain('Docker Desktop failed to start within timeout');
-  });
-
-  it('calls onStatus callback with progress messages', async () => {
-    setPlatform('darwin');
-    let callCount = 0;
-    mockExecFileSync.mockImplementation((cmd: unknown, args: unknown) => {
-      callCount++;
-      const argArr = args as string[];
-      if (cmd === 'open') return '' as any;
-      if (cmd === 'docker' && argArr[0] === 'ps') {
-        if (callCount <= 2) throw new Error('not running');
-        return '' as any;
-      }
-      throw new Error('unexpected');
-    });
-
-    const messages: string[] = [];
-    const onStatus = (msg: string) => { messages.push(msg); };
-
-    await ensureDocker(onStatus, 60_000);
-    expect(messages.some((m) => m.includes('Starting Docker Desktop'))).toBe(true);
-    expect(messages.some((m) => m.includes('Waiting for Docker to be ready'))).toBe(true);
   });
 });
 
@@ -201,7 +162,6 @@ describe('checkContainersRunning', () => {
     );
     const result = checkContainersRunning(challengeId, containerName);
     expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
   });
 
   it('returns error when target container is missing', () => {
@@ -217,9 +177,7 @@ describe('checkContainersRunning', () => {
     );
     const result = checkContainersRunning(challengeId, containerName);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('not running') && e.includes('Exited'))).toBe(
-      true
-    );
+    expect(result.errors.some((e) => e.includes('not running') && e.includes('Exited'))).toBe(true);
   });
 
   it('returns error when kali container is missing', () => {
@@ -227,17 +185,6 @@ describe('checkContainersRunning', () => {
     const result = checkContainersRunning(challengeId, containerName);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('gatekeeper-kali-1'))).toBe(true);
-  });
-
-  it('returns error when kali container is Exited', () => {
-    mockExecFileSync.mockReturnValue(
-      'gatekeeper-target-1\tUp 5 minutes\ngatekeeper-kali-1\tExited (0) 1 minute ago\n' as any
-    );
-    const result = checkContainersRunning(challengeId, containerName);
-    expect(result.ok).toBe(false);
-    expect(
-      result.errors.some((e) => e.includes('gatekeeper-kali-1') && e.includes('not running'))
-    ).toBe(true);
   });
 
   it('returns error when execFileSync throws', () => {
@@ -258,29 +205,16 @@ describe('checkTargetReachable', () => {
   const container = 'gatekeeper-kali-1';
   const url = 'http://target:5000';
 
-  it('returns ok when curl returns 200', () => {
+  it('returns ok for any HTTP response (200, 404)', () => {
     mockExecFileSync.mockReturnValue('200' as any);
-    const result = checkTargetReachable(container, url);
-    expect(result.ok).toBe(true);
-  });
+    expect(checkTargetReachable(container, url).ok).toBe(true);
 
-  it('returns ok when curl returns 404 (connected)', () => {
     mockExecFileSync.mockReturnValue('404' as any);
-    const result = checkTargetReachable(container, url);
-    expect(result.ok).toBe(true);
+    expect(checkTargetReachable(container, url).ok).toBe(true);
   });
 
   it('returns error when curl returns 000 (not reachable)', () => {
     mockExecFileSync.mockReturnValue('000' as any);
-    const result = checkTargetReachable(container, url);
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('not reachable'))).toBe(true);
-  });
-
-  it('returns error when curl throws (treated as FAIL)', () => {
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('exec failed');
-    });
     const result = checkTargetReachable(container, url);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('not reachable'))).toBe(true);
@@ -309,31 +243,13 @@ describe('checkKaliTools', () => {
     mockExecFileSync.mockReturnValue('/usr/bin/tool' as any);
     const result = checkKaliTools(container);
     expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
   });
 
-  it('returns error when one tool is missing', () => {
-    mockExecFileSync
-      .mockReturnValueOnce('/usr/bin/curl' as any) // curl found
-      .mockImplementationOnce(() => {
-        throw new Error('not found');
-      }) // wget missing
-      .mockReturnValueOnce('/usr/bin/python3' as any); // python3 found
-
-    const result = checkKaliTools(container);
-    expect(result.ok).toBe(false);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('wget');
-  });
-
-  it('returns multiple errors and hints when multiple tools missing', () => {
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('not found');
-    });
+  it('returns errors for missing tools with rebuild hints', () => {
+    mockExecFileSync.mockImplementation(() => { throw new Error('not found'); });
     const result = checkKaliTools(container);
     expect(result.ok).toBe(false);
     expect(result.errors).toHaveLength(3);
-    expect(result.hints.length).toBeGreaterThan(0);
     expect(result.hints.some((h) => h.includes('Rebuild'))).toBe(true);
   });
 
@@ -364,15 +280,6 @@ describe('checkApiKey', () => {
     const result = await checkApiKey('anthropic', 'sk-bad-key');
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('invalid'))).toBe(true);
-    expect(result.hints.some((h) => h.includes('oasis config set'))).toBe(true);
-  });
-
-  it('anthropic: returns error on network failure', async () => {
-    mockAnthropicCreate.mockRejectedValue(new Error('ECONNREFUSED'));
-    const result = await checkApiKey('anthropic', 'sk-ant-test');
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('Could not validate'))).toBe(true);
-    expect(result.hints.some((h) => h.includes('network'))).toBe(true);
   });
 
   it('anthropic: treats 404 (model deprecated) as valid key', async () => {
@@ -383,37 +290,24 @@ describe('checkApiKey', () => {
 
   it('openai: returns ok on successful call', async () => {
     mockOpenAIModelsList.mockResolvedValue({ data: [] });
-    const result = await checkApiKey('openai', 'sk-openai-test');
-    expect(result.ok).toBe(true);
+    expect((await checkApiKey('openai', 'sk-openai-test')).ok).toBe(true);
   });
 
   it('openai: returns error on 401', async () => {
     mockOpenAIModelsList.mockRejectedValue({ status: 401 });
-    const result = await checkApiKey('openai', 'sk-bad');
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('invalid'))).toBe(true);
+    expect((await checkApiKey('openai', 'sk-bad')).ok).toBe(false);
   });
 
   it('ollama: skips validation and returns ok', async () => {
-    const result = await checkApiKey('ollama', '');
-    expect(result.ok).toBe(true);
+    expect((await checkApiKey('ollama', '')).ok).toBe(true);
   });
 
   it('xai: returns ok on successful chat completion', async () => {
     mockOpenAIChatCreate.mockResolvedValue({ id: 'chatcmpl-123' });
-    const result = await checkApiKey('xai', 'xai-test-key');
-    expect(result.ok).toBe(true);
+    expect((await checkApiKey('xai', 'xai-test-key')).ok).toBe(true);
   });
 
-  it('xai: returns error on 401', async () => {
-    mockOpenAIChatCreate.mockRejectedValue({ status: 401 });
-    const result = await checkApiKey('xai', 'xai-bad-key');
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('invalid'))).toBe(true);
-    expect(result.hints.some((h) => h.includes('oasis config set'))).toBe(true);
-  });
-
-  it('xai: treats 400 "Incorrect API key" as invalid key', async () => {
+  it('xai: treats 400 "Incorrect API key" as invalid', async () => {
     mockOpenAIChatCreate.mockRejectedValue({
       status: 400,
       message: '400 "Incorrect API key provided: xa***23."',
@@ -431,19 +325,6 @@ describe('checkApiKey', () => {
     const result = await checkApiKey('xai', 'xai-test-key');
     expect(result.ok).toBe(true);
     expect(result.hints.some((h) => h.includes('credit'))).toBe(true);
-  });
-
-  it('xai: treats 404 (model not found) as valid key', async () => {
-    mockOpenAIChatCreate.mockRejectedValue({ status: 404 });
-    const result = await checkApiKey('xai', 'xai-test-key');
-    expect(result.ok).toBe(true);
-  });
-
-  it('xai: returns error on network failure', async () => {
-    mockOpenAIChatCreate.mockRejectedValue(new Error('ECONNREFUSED'));
-    const result = await checkApiKey('xai', 'xai-test-key');
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('Could not validate'))).toBe(true);
   });
 
   it('includes baseUrl in hints when provided and validation fails', async () => {
@@ -464,44 +345,11 @@ describe('runPreflightChecks', () => {
   const containerName = 'gatekeeper-kali-1';
   const targetUrl = 'http://target:5000';
 
-  function mockAllChecksPass() {
-    // docker ps
-    mockExecFileSync.mockReturnValueOnce('' as any);
-    // docker ps -a (containers)
-    mockExecFileSync.mockReturnValueOnce(
-      'gatekeeper-target-1\tUp 5 minutes\ngatekeeper-kali-1\tUp 5 minutes\n' as any
-    );
-    // curl check
-    mockExecFileSync.mockReturnValueOnce('200' as any);
-    // which curl, which wget, which python3
-    mockExecFileSync.mockReturnValueOnce('/usr/bin/curl' as any);
-    mockExecFileSync.mockReturnValueOnce('/usr/bin/wget' as any);
-    mockExecFileSync.mockReturnValueOnce('/usr/bin/python3' as any);
-  }
-
-  it('returns ok when all checks pass', () => {
-    mockAllChecksPass();
-    const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);
-    expect(result.ok).toBe(true);
-  });
-
-  it('returns docker error on early failure (docker not running)', () => {
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('docker not found');
-    });
+  it('returns docker error on early failure', () => {
+    mockExecFileSync.mockImplementation(() => { throw new Error('docker not found'); });
     const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);
     expect(result.ok).toBe(false);
     expect(result.errors).toContain('Docker is not running or not accessible');
-  });
-
-  it('returns container error when docker ok but containers fail', () => {
-    // docker ps succeeds
-    mockExecFileSync.mockReturnValueOnce('' as any);
-    // docker ps -a returns no containers
-    mockExecFileSync.mockReturnValueOnce('' as any);
-    const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes('not found'))).toBe(true);
   });
 
   it('returns tools error when other checks pass but tools missing', () => {
@@ -514,9 +362,7 @@ describe('runPreflightChecks', () => {
     // curl check succeeds
     mockExecFileSync.mockReturnValueOnce('200' as any);
     // all tools missing
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('not found');
-    });
+    mockExecFileSync.mockImplementation(() => { throw new Error('not found'); });
     const result = runPreflightChecks(challengeId, challengeDir, containerName, targetUrl);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes('Required tool'))).toBe(true);

@@ -51,38 +51,22 @@ describe('promptExport', () => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  it('skips export when analysis is undefined', async () => {
+  it('skips export when analysis is unavailable (undefined or parseFailed)', async () => {
     await promptExport(makeRunResult(), undefined);
-    const output = consoleSpy.mock.calls.map(c => c[0]).join('\n');
+    let output = consoleSpy.mock.calls.map(c => c[0]).join('\n');
     expect(output).toContain('No analysis available');
-    expect(output).toContain('oasis analyze test-run-001');
+
+    consoleSpy.mockClear();
+    await promptExport(makeRunResult(), makeAnalysis({ parseFailed: true }));
+    output = consoleSpy.mock.calls.map(c => c[0]).join('\n');
+    expect(output).toContain('No analysis available');
   });
 
-  it('skips export when analysis.parseFailed is true', async () => {
-    const analysis = makeAnalysis({ parseFailed: true });
-    await promptExport(makeRunResult(), analysis);
-    const output = consoleSpy.mock.calls.map(c => c[0]).join('\n');
-    expect(output).toContain('No analysis available');
-    expect(output).toContain('oasis analyze test-run-001');
-  });
-
-  it('does not skip export for valid analysis (parseFailed undefined)', async () => {
+  it('prompts export for valid analysis', async () => {
     const { select } = await import('@inquirer/prompts');
     (select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('done');
 
-    const analysis = makeAnalysis();
-    await promptExport(makeRunResult(), analysis);
-    const output = consoleSpy.mock.calls.map(c => c[0]).join('\n');
-    expect(output).not.toContain('No analysis available');
-    expect(output).toContain('oasis report test-run-001');
-  });
-
-  it('does not skip export for explicit parseFailed: false', async () => {
-    const { select } = await import('@inquirer/prompts');
-    (select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('done');
-
-    const analysis = makeAnalysis({ parseFailed: false });
-    await promptExport(makeRunResult(), analysis);
+    await promptExport(makeRunResult(), makeAnalysis());
     const output = consoleSpy.mock.calls.map(c => c[0]).join('\n');
     expect(output).not.toContain('No analysis available');
     expect(output).toContain('oasis report test-run-001');

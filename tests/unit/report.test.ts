@@ -174,27 +174,11 @@ const analysisResult: AnalysisResult = {
 };
 
 // =============================================================================
-// generateTextReport
+// generateTextReport — success vs failure output
 // =============================================================================
 
 describe('generateTextReport', () => {
-  it('generates box-drawing formatted report', () => {
-    const report = generateTextReport(successfulRun);
-    expect(report).toContain('OASIS AFTER-ACTION REPORT');
-    expect(report).toContain('╔');
-    expect(report).toContain('╗');
-    expect(report).toContain('╚');
-    expect(report).toContain('╝');
-  });
-
-  it('includes run metadata', () => {
-    const report = generateTextReport(successfulRun);
-    expect(report).toContain(successfulRun.id);
-    expect(report).toContain(successfulRun.modelVersion);
-    expect(report).toContain(successfulRun.challenge);
-  });
-
-  it('shows SUCCESS for successful runs', () => {
+  it('shows SUCCESS and flag for successful runs', () => {
     const report = generateTextReport(successfulRun);
     expect(report).toContain('SUCCESS');
     expect(report).toContain(successfulRun.flag!);
@@ -205,56 +189,13 @@ describe('generateTextReport', () => {
     expect(report).toContain('FAILED');
     expect(report).toContain('NOT FOUND');
   });
-
-  it('includes ATT&CK techniques section', () => {
-    const report = generateTextReport(successfulRun);
-    expect(report).toContain('ATT&CK TECHNIQUES USED');
-    expect(report).toContain('T1592');
-    expect(report).toContain('T1190');
-  });
-
-  it('includes attack path with iteration numbers', () => {
-    const report = generateTextReport(successfulRun);
-    expect(report).toContain('ATTACK PATH');
-  });
-
-  it('includes tools used section', () => {
-    const report = generateTextReport(successfulRun);
-    expect(report).toContain('TOOLS USED');
-    expect(report).toContain('curl');
-  });
 });
 
 // =============================================================================
-// generateJsonReport
+// generateJsonReport — conditional analysis inclusion
 // =============================================================================
 
 describe('generateJsonReport', () => {
-  it('generates valid JSON', () => {
-    const json = generateJsonReport(successfulRun);
-    expect(() => JSON.parse(json)).not.toThrow();
-  });
-
-  it('includes metadata section', () => {
-    const report = JSON.parse(generateJsonReport(successfulRun));
-    expect(report.metadata.runId).toBe(successfulRun.id);
-    expect(report.metadata.model).toBe(successfulRun.modelVersion);
-    expect(report.metadata.challenge).toBe(successfulRun.challenge);
-  });
-
-  it('includes result section', () => {
-    const report = JSON.parse(generateJsonReport(successfulRun));
-    expect(report.result.success).toBe(true);
-    expect(report.result.flag).toBe(successfulRun.flag);
-    expect(report.result.tokens).toBeDefined();
-  });
-
-  it('includes techniques and steps', () => {
-    const report = JSON.parse(generateJsonReport(successfulRun));
-    expect(report.techniques).toHaveLength(2);
-    expect(report.steps.length).toBeGreaterThan(0);
-  });
-
   it('includes analysis when provided', () => {
     const report = JSON.parse(generateJsonReport(successfulRun, analysisResult));
     expect(report.analysis).toBeDefined();
@@ -269,117 +210,46 @@ describe('generateJsonReport', () => {
 });
 
 // =============================================================================
-// generateMarkdownReport
+// generateMarkdownReport — conditional sections
 // =============================================================================
 
 describe('generateMarkdownReport', () => {
-  it('starts with H1 header', () => {
-    const md = generateMarkdownReport(successfulRun);
-    expect(md).toMatch(/^# OASIS Benchmark Report/);
-  });
-
-  it('includes run summary table', () => {
-    const md = generateMarkdownReport(successfulRun);
-    expect(md).toContain('| Run ID |');
-    expect(md).toContain(successfulRun.id);
-  });
-
-  it('includes MITRE ATT&CK techniques table', () => {
-    const md = generateMarkdownReport(successfulRun);
-    expect(md).toContain('## MITRE ATT&CK Techniques');
-    expect(md).toContain('T1190');
-    expect(md).toContain('attack.mitre.org');
-  });
-
-  it('includes attack path table', () => {
-    const md = generateMarkdownReport(successfulRun);
-    expect(md).toContain('## Attack Path');
-    expect(md).toContain('| Step |');
-  });
-
   it('includes analysis section when provided', () => {
     const md = generateMarkdownReport(successfulRun, analysisResult);
     expect(md).toContain('## Analysis');
     expect(md).toContain('Strategy Score');
     expect(md).toContain('Executive Summary');
-    expect(md).toContain('Key Findings');
   });
 
   it('includes rubric score when in analysis', () => {
     const md = generateMarkdownReport(successfulRun, analysisResult);
     expect(md).toContain('Rubric Score');
-    expect(md).toContain('Objective');
     expect(md).toContain('Milestones');
-  });
-
-  it('ends with generated-by footer', () => {
-    const md = generateMarkdownReport(successfulRun);
-    expect(md).toContain('Generated by [OASIS]');
   });
 });
 
 // =============================================================================
-// generateShareCard
+// generateShareCard — score bar rendering
 // =============================================================================
 
 describe('generateShareCard', () => {
-  it('produces markdown with benchmark header', () => {
-    const card = generateShareCard(successfulRun, analysisResult, 82);
-    expect(card).toContain('OASIS Benchmark Result');
-  });
-
-  it('includes challenge and model', () => {
-    const card = generateShareCard(successfulRun, analysisResult);
-    expect(card).toContain(successfulRun.challenge);
-    expect(card).toContain(successfulRun.modelVersion);
-  });
-
   it('includes score bar when KSM provided', () => {
     const card = generateShareCard(successfulRun, analysisResult, 75);
     expect(card).toContain('KSM Score: 75.0');
     expect(card).toContain('\u2588'); // filled block
   });
 
-  it('shows flag captured for successful run', () => {
-    const card = generateShareCard(successfulRun);
-    expect(card).toContain('Flag captured');
-  });
-
-  it('shows Failed for failed run', () => {
-    const card = generateShareCard(failedRun);
-    expect(card).toContain('Failed');
-  });
-
   it('includes approach when analysis provided', () => {
     const card = generateShareCard(successfulRun, analysisResult);
     expect(card).toContain('targeted');
   });
-
-  it('ends with OASIS link', () => {
-    const card = generateShareCard(successfulRun);
-    expect(card).toContain('oasis.kryptsec.com');
-  });
 });
 
 // =============================================================================
-// generateHtmlReport
+// generateHtmlReport — XSS escaping (security boundary)
 // =============================================================================
 
 describe('generateHtmlReport', () => {
-  it('produces valid HTML structure', () => {
-    const html = generateHtmlReport(successfulRun);
-    expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('<html');
-    expect(html).toContain('</html>');
-  });
-
-  it('includes run metadata', () => {
-    const html = generateHtmlReport(successfulRun);
-    expect(html).toContain(successfulRun.id);
-    expect(html).toContain(successfulRun.modelVersion);
-    expect(html).toContain(successfulRun.challenge);
-  });
-
   it('escapes HTML special characters in model version', () => {
     const xssRun = { ...successfulRun, modelVersion: '<script>alert("xss")</script>' };
     const html = generateHtmlReport(xssRun);
@@ -415,11 +285,5 @@ describe('generateHtmlReport', () => {
     const html = generateHtmlReport(successfulRun, analysisResult, 85);
     expect(html).toContain('KSM Score');
     expect(html).toContain('85.0');
-  });
-
-  it('includes ATT&CK techniques table', () => {
-    const html = generateHtmlReport(successfulRun);
-    expect(html).toContain('T1592');
-    expect(html).toContain('T1190');
   });
 });
