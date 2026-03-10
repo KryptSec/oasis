@@ -35,6 +35,11 @@ export function trimMessages<T extends { role: string }>(messages: T[]): T[] {
   while (start < tail.length && tail[start].role === messages[0].role) {
     start++;
   }
+  // Skip orphaned tool messages whose parent assistant+tool_calls was sliced off.
+  // OpenAI hard-rejects these with 400; other providers silently degrade.
+  while (start < tail.length && tail[start].role === 'tool') {
+    start++;
+  }
   return [messages[0], ...tail.slice(start)];
 }
 

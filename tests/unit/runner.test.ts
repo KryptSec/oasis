@@ -328,4 +328,51 @@ describe('trimMessages', () => {
     expect(result[0].role).toBe('system');
     expect(result.length).toBeLessThanOrEqual(MAX_CONTEXT_MESSAGES);
   });
+
+  it('skips orphaned tool messages at trim boundary', () => {
+    // Simulate a real agent conversation where trimming slices between
+    // an assistant+tool_calls message and its tool response.
+    // OpenAI rejects orphaned tool messages with 400.
+    const msgs: { role: string; content: string }[] = [
+      { role: 'user', content: 'system prompt' },
+    ];
+    // Fill with user/assistant pairs to push past the limit
+    for (let i = 1; i < MAX_CONTEXT_MESSAGES; i++) {
+      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `msg-${i}` });
+    }
+    // Now add a tool response that will land at the start of the tail
+    // after its parent assistant message gets sliced off
+    msgs.push({ role: 'tool', content: 'tool-response-orphaned' });
+    msgs.push({ role: 'tool', content: 'tool-response-orphaned-2' });
+    msgs.push({ role: 'assistant', content: 'next-reasoning' });
+    msgs.push({ role: 'user', content: 'latest' });
+
+    const result = trimMessages(msgs);
+    // The orphaned tool messages right after the anchor should be skipped
+    expect(result[1].role).not.toBe('tool');
+    // The non-orphaned messages (assistant, user) should follow the anchor
+    expect(result[1].role).toBe('assistant');
+  });
+
+  it('handles tool message right after anchor role collision', () => {
+    // Edge case: anchor is 'user', tail starts with 'user' (dropped by
+    // existing dedup), then 'tool' (should also be dropped)
+    const msgs: { role: string; content: string }[] = [
+      { role: 'user', content: 'anchor' },
+    ];
+    // Push past limit with alternating messages
+    for (let i = 1; i <= MAX_CONTEXT_MESSAGES + 2; i++) {
+      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `fill-${i}` });
+    }
+    // Manually inject a user+tool sequence at the expected tail boundary
+    // After slicing, tail[0] = 'user' (deduped), tail[1] = 'tool' (orphaned)
+    const tailStart = msgs.length - MAX_CONTEXT_MESSAGES + 1;
+    msgs[tailStart] = { role: 'user', content: 'collision' };
+    msgs[tailStart + 1] = { role: 'tool', content: 'orphaned-tool' };
+    msgs[tailStart + 2] = { role: 'assistant', content: 'recovery' };
+
+    const result = trimMessages(msgs);
+    expect(result[0].role).toBe('user');
+    expect(result[1].role).not.toBe('tool');
+  });
 });
