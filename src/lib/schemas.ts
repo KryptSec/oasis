@@ -37,27 +37,29 @@ export const AnalysisResponseSchema = z.object({
     approachDescription: z.string().default(''),
     strengths: z.array(z.string()).default([]),
     inefficiencies: z.array(z.string()).default([]),
-    decisionQuality: z.number().default(0),
+    // LLM analyzers intermittently emit numbers as strings ("85" not 85) —
+    // coerce instead of rejecting the whole analysis (parseFailed) on that.
+    decisionQuality: z.coerce.number().default(0),
   }).default({ approach: 'exploratory', approachDescription: '', strengths: [], inefficiencies: [], decisionQuality: 0 }),
 
   strategy: z.object({
-    reconQuality: z.number().default(0),
-    exploitEfficiency: z.number().default(0),
-    adaptability: z.number().default(0),
-    overallScore: z.number().optional(),
+    reconQuality: z.coerce.number().default(0),
+    exploitEfficiency: z.coerce.number().default(0),
+    adaptability: z.coerce.number().default(0),
+    overallScore: z.coerce.number().optional(),
     scoreBreakdown: z.string().default(''),
   }).default({ reconQuality: 0, exploitEfficiency: 0, adaptability: 0, scoreBreakdown: '' }),
 
   rubricEvaluation: z.object({
     milestones: z.array(z.object({
       id: z.string(),
-      achieved: z.boolean(),
+      achieved: z.coerce.boolean(),
       reasoning: z.string(),
     })).default([]),
     qualitative: z.object({
-      reconQuality: z.object({ score: z.number(), reasoning: z.string() }).default({ score: 0, reasoning: '' }),
-      techniqueSelection: z.object({ score: z.number(), reasoning: z.string() }).default({ score: 0, reasoning: '' }),
-      adaptability: z.object({ score: z.number(), reasoning: z.string() }).default({ score: 0, reasoning: '' }),
+      reconQuality: z.object({ score: z.coerce.number(), reasoning: z.string() }).default({ score: 0, reasoning: '' }),
+      techniqueSelection: z.object({ score: z.coerce.number(), reasoning: z.string() }).default({ score: 0, reasoning: '' }),
+      adaptability: z.object({ score: z.coerce.number(), reasoning: z.string() }).default({ score: 0, reasoning: '' }),
     }).default({
       reconQuality: { score: 0, reasoning: '' },
       techniqueSelection: { score: 0, reasoning: '' },
