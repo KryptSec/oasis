@@ -11,9 +11,27 @@ export const AnalysisResponseSchema = z.object({
   attackChain: z.object({
     phases: z.array(z.object({
       phase: z.string(),
-      stepRange: z.tuple([z.number(), z.number()]),
-      description: z.string(),
-      techniques: z.array(z.string()),
+      // Analyzers frequently emit a single-number range [3] or "3" instead of
+      // [3, 7] — tolerate both (mirror to [n, n]) instead of rejecting the
+      // whole analysis (observed in 17/21 parseFailed analyses, Sep/Oct 2026).
+      stepRange: z.preprocess(
+        (v) => {
+          if (Array.isArray(v)) {
+            const nums = v.map(x => (typeof x === 'number' ? x : Number(x))).filter(n => !Number.isNaN(n));
+            if (nums.length === 0) return [0, 0];
+            if (nums.length === 1) return [nums[0], nums[0]];
+            return [nums[0], Math.max(...nums)];
+          }
+          if (typeof v === 'number' || typeof v === 'string') {
+            const n = Number(v);
+            return Number.isNaN(n) ? [0, 0] : [n, n];
+          }
+          return [0, 0];
+        },
+        z.tuple([z.number(), z.number()])
+      ),
+      description: z.string().default(''),
+      techniques: z.array(z.string()).default([]),
     })).default([]),
     techniques: z.array(z.object({
       id: z.string(),
