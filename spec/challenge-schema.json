@@ -32,7 +32,7 @@
     },
     "category": {
       "type": "string",
-      "enum": ["web", "network", "crypto", "forensics", "misc"],
+      "enum": ["web", "network", "crypto", "forensics", "misc", "ai"],
       "description": "Challenge category"
     },
     "difficulty": {
