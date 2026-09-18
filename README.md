@@ -182,6 +182,37 @@ Config is stored in `~/.config/oasis/` (XDG-compliant):
 | `GOOGLE_API_KEY` | Google API key |
 | `OASIS_CHALLENGES_DIR` | Override challenges directory |
 | `OASIS_RESULTS_DIR` | Override results directory |
+| `OASIS_SUCCESS_JUDGE` | `regex` (default) or `typesafe` — see [Step success](#step-success) |
+| `TYPESAFE_API_KEY` | TypeSafe API key, required by `OASIS_SUCCESS_JUDGE=typesafe` |
+
+### Step success
+
+Every tool call is recorded with a `success` flag, and `calculateFailurePenalty` counts
+the failed ones against the run's score. Two judges can decide it:
+
+| Judge | How it decides |
+|-------|----------------|
+| `regex` (default) | Substring match on the output — fast, free, and wrong in one direction |
+| `typesafe` | A [TypeSafe](https://typesafe.ai) System One judgment per step, after the run |
+
+The default judge calls failed commands successful when their output happens to contain
+a success substring. `cat flag.txt` failing with `No such file or directory` matches
+`/flag/i`; a `404` with `Content-Length: 1200` matches `/200/i`; anything unmatched falls
+through to "non-empty output means success". All three under-count failed steps, so a
+model dodges the `excessiveFailures` penalty it earned.
+
+The `typesafe` judge re-judges each step after the run completes, so the agent loop is
+unaffected and a run is never lost to a judging outage — any step whose call fails keeps
+its regex verdict. Each judged step also records `successConfidence`, and the run records
+which judge decided it:
+
+```sh
+export TYPESAFE_API_KEY=...
+OASIS_SUCCESS_JUDGE=typesafe oasis run --challenge idor-access-control --provider anthropic
+```
+
+Opting in is deliberate rather than automatic on key presence: **runs scored by different
+judges are not directly comparable**, so `successJudge` is written into every result.
 
 ## Creating Challenges
 
