@@ -7,9 +7,9 @@
 //   curl /admin         -> "HTTP/1.1 404 ... Content-Length: 1200"    -> true (/200/i)
 //   grep -r flag /var/www -> "grep: ...: No such file or directory"   -> true (non-empty fallback)
 //
-// That value is load-bearing: scoring.calculateFailurePenalty counts
-// `steps.filter(s => s.success === false)`, so false positives let a model dodge the
-// excessiveFailures penalty it earned.
+// That value is load-bearing: the LLM analyzer sees `step.success` in its prompt and
+// considers it when evaluating penalties like excessiveFailures. False positives let a
+// model dodge the penalty it earned.
 //
 // The `typesafe` judge asks a System One model instead, once per tool_call step, as a
 // pass AFTER the run: the agent loop stays synchronous and unchanged, and a benchmark
@@ -173,5 +173,8 @@ export async function judgeSteps(
     CONCURRENCY,
   );
 
-  return { judge: 'typesafe', changed, failed, model };
+  // Only claim typesafe when at least one step was actually judged by typesafe.
+  // If all steps fell back to regex, the run should not be labeled as typesafe.
+  const actualJudge = failed === targets.length ? 'regex' : 'typesafe';
+  return { judge: actualJudge, changed, failed, model: actualJudge === 'typesafe' ? model : undefined };
 }

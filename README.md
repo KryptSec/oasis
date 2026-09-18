@@ -188,8 +188,7 @@ Config is stored in `~/.config/oasis/` (XDG-compliant):
 
 ### Step success
 
-Every tool call is recorded with a `success` flag, and `calculateFailurePenalty` counts
-the failed ones against the run's score. Two judges can decide it:
+Every tool call is recorded with a `success` flag. The LLM analyzer sees this field in its prompt and considers it when evaluating penalties like `excessiveFailures`. Two judges can decide it:
 
 | Judge | How it decides |
 |-------|----------------|

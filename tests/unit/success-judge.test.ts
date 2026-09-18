@@ -247,4 +247,72 @@ describe('judgeSteps with the typesafe judge', () => {
     expect(out).toEqual({ judge: 'regex', changed: 0, failed: 1 });
     expect(s.success).toBe(true);
   });
+
+  // Provenance: a run is only labeled typesafe when typesafe actually decided.
+  it('labels the run as regex when all steps fall back', async () => {
+    mockSdk(() => {
+      throw new Error('503');
+    });
+    const { judgeSteps: judge } = await import('../../src/lib/success-judge.js');
+    const steps = [
+      step({ command: 'a', success: true }),
+      step({ command: 'b', success: true }),
+      step({ command: 'c', success: true }),
+    ];
+    const out = await judge(steps, { env: ENV });
+
+    // All three steps failed to be judged by typesafe, so the run should be labeled as regex
+    expect(out.judge).toBe('regex');
+    expect(out.failed).toBe(3);
+    expect(out.changed).toBe(0);
+    expect(out.model).toBeUndefined();
+    // All steps keep their regex verdict
+    expect(steps.every(s => s.success === true)).toBe(true);
+    expect(steps.every(s => s.successConfidence === undefined)).toBe(true);
+  });
+
+  it('labels the run as typesafe when some steps are judged (mixed)', async () => {
+    mockSdk(state => {
+      if (state.step.command === 'fail') throw new Error('503');
+      return 0.02;
+    });
+    const { judgeSteps: judge } = await import('../../src/lib/success-judge.js');
+    const steps = [
+      step({ command: 'a', success: true }),
+      step({ command: 'fail', success: true }),
+      step({ command: 'b', success: true }),
+    ];
+    const out = await judge(steps, { env: ENV });
+
+    // Two steps were judged by typesafe, one fell back
+    expect(out.judge).toBe('typesafe');
+    expect(out.changed).toBe(2); // 'a' and 'b' changed from true to false
+    expect(out.failed).toBe(1); // 'fail' kept its regex verdict
+    expect(out.model).toBe('jev-1.13.0');
+    // The failed step kept its regex verdict
+    expect(steps[0].success).toBe(false);
+    expect(steps[0].successConfidence).toBe(0.02);
+    expect(steps[1].success).toBe(true);
+    expect(steps[1].successConfidence).toBeUndefined();
+    expect(steps[2].success).toBe(false);
+    expect(steps[2].successConfidence).toBe(0.02);
+  });
+
+  it('labels the run as typesafe when all steps are successfully judged', async () => {
+    mockSdk(() => 0.98);
+    const { judgeSteps: judge } = await import('../../src/lib/success-judge.js');
+    const steps = [
+      step({ command: 'a', success: false }),
+      step({ command: 'b', success: false }),
+    ];
+    const out = await judge(steps, { env: ENV });
+
+    // All steps were judged by typesafe
+    expect(out.judge).toBe('typesafe');
+    expect(out.changed).toBe(2); // Both changed from false to true
+    expect(out.failed).toBe(0);
+    expect(out.model).toBe('jev-1.13.0');
+    expect(steps.every(s => s.success === true)).toBe(true);
+    expect(steps.every(s => s.successConfidence === 0.98)).toBe(true);
+  });
 });
