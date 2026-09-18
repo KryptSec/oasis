@@ -98,6 +98,8 @@ export interface RunResult {
    * environment the run happened in.
    */
   successJudge?: 'regex' | 'typesafe';
+  /** Pinned judge model when successJudge is 'typesafe'. A score names what produced it. */
+  successJudgeModel?: string;
   error?: string | null;
 }
 

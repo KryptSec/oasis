@@ -855,9 +855,10 @@ export async function runBenchmark(config: RunnerConfig): Promise<RunResult> {
   // buildRunResult, and methodologyBreakdown counts methodology, so neither is affected.
   const outcome = await judgeSteps(result.steps);
   result.successJudge = outcome.judge;
+  if (outcome.model) result.successJudgeModel = outcome.model;
   if (outcome.judge === 'typesafe' && config.verbose) {
     console.log(chalk.dim(
-      `  success judge: typesafe — ${outcome.changed} step verdict(s) changed` +
+      `  success judge: typesafe (${outcome.model}) — ${outcome.changed} step verdict(s) changed` +
       (outcome.failed > 0 ? `, ${outcome.failed} kept regex verdict (call failed)` : ''),
     ));
   }

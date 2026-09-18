@@ -184,6 +184,7 @@ Config is stored in `~/.config/oasis/` (XDG-compliant):
 | `OASIS_RESULTS_DIR` | Override results directory |
 | `OASIS_SUCCESS_JUDGE` | `regex` (default) or `typesafe` — see [Step success](#step-success) |
 | `TYPESAFE_API_KEY` | TypeSafe API key, required by `OASIS_SUCCESS_JUDGE=typesafe` |
+| `OASIS_SUCCESS_JUDGE_MODEL` | Override the pinned judge model (default `jev-1.13.0`) |
 
 ### Step success
 
@@ -212,7 +213,19 @@ OASIS_SUCCESS_JUDGE=typesafe oasis run --challenge idor-access-control --provide
 ```
 
 Opting in is deliberate rather than automatic on key presence: **runs scored by different
-judges are not directly comparable**, so `successJudge` is written into every result.
+judges are not directly comparable**, so `successJudge` and `successJudgeModel` are written
+into every result. The judge model is pinned (`jev-1.13.0`) rather than tracking `latest`,
+for the same reason — a silent model change would move scores with no version bump in OASIS.
+
+#### Known limitation
+
+The judge reads `step.command`, written by the model under test, and `step.output`, written
+by the challenge container. The judged party therefore has some control over its own
+evidence, and a model could in principle emit a command carrying text aimed at its scorer.
+The question instructs the judge to treat both fields as inert transcript data, which
+narrows that surface without closing it. Treat scores from untrusted challenges or
+adversarially-prompted models with the same caution you would apply to any self-reported
+benchmark result.
 
 ## Creating Challenges
 
