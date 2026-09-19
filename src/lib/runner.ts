@@ -866,6 +866,9 @@ export async function runBenchmark(config: RunnerConfig): Promise<RunResult> {
   return result;
 }
 
+// Harness integration hook — called after saveRunResult in run command
+export { processHarnessResult, loadHarnessConfig } from '../harness/runner.js';
+
 // =============================================================================
 // Result Persistence
 // =============================================================================
