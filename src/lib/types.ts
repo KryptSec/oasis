@@ -56,6 +56,8 @@ export interface Step {
   methodology?: Methodology;
   tool?: string;
   success?: boolean;
+  /** Probability from the `typesafe` success judge; absent when the regex judge decided. */
+  successConfidence?: number;
   inputTokens: number;
   outputTokens: number;
 }
@@ -90,6 +92,14 @@ export interface RunResult {
   methodologies: string[];
   toolsUsed: string[];
   methodologyBreakdown: Record<string, { count: number; percentage: number }>;
+  /**
+   * Which judge decided `step.success` for this run. Runs judged differently are not
+   * directly comparable, so the result records it rather than leaving it to the
+   * environment the run happened in.
+   */
+  successJudge?: 'regex' | 'typesafe';
+  /** Pinned judge model when successJudge is 'typesafe'. A score names what produced it. */
+  successJudgeModel?: string;
   error?: string | null;
 }
 

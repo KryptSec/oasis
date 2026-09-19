@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { resolve } from 'path';
 import { wasSuccessful, classifyToAttack, classifyCommand, extractTool } from './classifier.js';
 import { ToolInputSchema } from './schemas.js';
+import { judgeSteps } from './success-judge.js';
 import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, ChallengeConfig, AnalysisResult } from './types.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
@@ -843,11 +844,26 @@ function buildRunResult(
 // =============================================================================
 
 export async function runBenchmark(config: RunnerConfig): Promise<RunResult> {
-  if (isAnthropicProvider(config.provider)) {
-    return runClaudeAgent(config);
-  } else {
-    return runOpenAIAgent(config);
+  const result = isAnthropicProvider(config.provider)
+    ? await runClaudeAgent(config)
+    : await runOpenAIAgent(config);
+
+  // Re-judge step success before anything scores the run. Off unless OASIS_SUCCESS_JUDGE
+  // is set to `typesafe`; on failure every step keeps its regex verdict, so a completed
+  // run is never lost here.
+  // Only step.success changes. The run's own success is the flag check in
+  // buildRunResult, and methodologyBreakdown counts methodology, so neither is affected.
+  const outcome = await judgeSteps(result.steps);
+  result.successJudge = outcome.judge;
+  if (outcome.model) result.successJudgeModel = outcome.model;
+  if (outcome.judge === 'typesafe' && config.verbose) {
+    console.log(chalk.dim(
+      `  success judge: typesafe (${outcome.model}) — ${outcome.changed} step verdict(s) changed` +
+      (outcome.failed > 0 ? `, ${outcome.failed} kept regex verdict (call failed)` : ''),
+    ));
   }
+
+  return result;
 }
 
 // =============================================================================
