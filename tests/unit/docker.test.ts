@@ -90,9 +90,18 @@ describe('pullImage', () => {
       throw err;
     });
 
-    expect(() => pullImage('myimage:latest')).toThrow('network timeout');
+    // Injected no-op sleep: 'connection refused' is transient, so it is retried
+    // with backoff — we do not want to actually wait in the test.
+    expect(() => pullImage('myimage:latest', undefined, { sleep: () => {} }))
+      .toThrow('network timeout');
+
     const pulls = getDockerCalls('pull');
-    expect(pulls).toHaveLength(1);
+    // Every attempt is a native pull; a transient failure must never be
+    // "fixed" by falling back to linux/amd64.
+    expect(pulls.length).toBeGreaterThan(0);
+    for (const [, args] of pulls) {
+      expect(args).not.toContain('--platform');
+    }
   });
 
   it('calls onProgress callback during pull', () => {
