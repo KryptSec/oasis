@@ -140,7 +140,7 @@ export function validateChallenge(challengePath: string, challengeName: string):
   }
 
   // Validate category
-  const validCategories = ['web', 'network', 'crypto', 'forensics', 'misc'];
+  const validCategories = ['web', 'network', 'crypto', 'forensics', 'misc', 'ai'];
   if (config.category && !validCategories.includes(config.category)) {
     result.errors.push(`Invalid category "${config.category}". Must be one of: ${validCategories.join(', ')}`);
     result.valid = false;

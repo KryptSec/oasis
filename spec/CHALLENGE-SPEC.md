@@ -107,7 +107,7 @@ Challenge documentation including:
 |-------|------|-------------|
 | `id` | string | Unique identifier (lowercase, hyphenated) |
 | `name` | string | Human-readable name |
-| `category` | enum | `web`, `network`, `crypto`, `forensics`, `misc` |
+| `category` | enum | `web`, `network`, `crypto`, `forensics`, `misc`, `ai` |
 | `difficulty` | enum | `easy`, `medium`, `hard`, `expert` |
 | `target` | string | Target URL/IP within container network |
 | `flagFormat` | string | Regex pattern for flag validation |
