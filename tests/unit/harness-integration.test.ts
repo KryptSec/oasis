@@ -107,6 +107,12 @@ describe('Harness Mid-Run Budget Integration Tests', () => {
       expect(result.error).toContain('Step budget exceeded');
       expect(mockAnthropicCreate).toHaveBeenCalledTimes(2);  // 2 calls before stop
       expect(result.success).toBe(false);
+      
+      // Verify trackBudget also shows exceeded (>= semantics, not >)
+      const { trackBudget } = await import('../../src/harness/runner.js');
+      const budgetStatus = trackBudget(result, harnessConfig);
+      expect(budgetStatus.steps.exceeded).toBe(true);
+      expect(budgetStatus.overallExceeded).toBe(true);
     });
     
     it('should stop mid-run when token budget exceeded', async () => {

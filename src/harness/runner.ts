@@ -80,17 +80,17 @@ export function trackBudget(result: RunResult, config: HarnessConfig): BudgetSta
     overallExceeded: false,
   };
   
-  if (budget.steps.limit && budget.steps.used > budget.steps.limit) {
+  if (budget.steps.limit && budget.steps.used >= budget.steps.limit) {
     budget.steps.exceeded = true;
     budget.overallExceeded = true;
   }
   
-  if (budget.tokens.limit && budget.tokens.used > budget.tokens.limit) {
+  if (budget.tokens.limit && budget.tokens.used >= budget.tokens.limit) {
     budget.tokens.exceeded = true;
     budget.overallExceeded = true;
   }
   
-  if (budget.timeSeconds.limit && budget.timeSeconds.used > budget.timeSeconds.limit) {
+  if (budget.timeSeconds.limit && budget.timeSeconds.used >= budget.timeSeconds.limit) {
     budget.timeSeconds.exceeded = true;
     budget.overallExceeded = true;
   }

@@ -117,6 +117,24 @@ describe('Budget Tracking', () => {
     expect(budget.overallExceeded).toBe(true);
   });
   
+  it('should detect steps budget exceeded when AT exact limit', () => {
+    // Smoke test for >= semantics: at-limit should show exceeded
+    const config: HarnessConfig = {
+      enabled: true,
+      mode: 'single-model',
+      budget: { maxSteps: 25, hardStop: false },  // mockResult has 25 iterations
+      verifyBeforeClaim: true,
+      coverageLedger: false,
+    };
+    
+    const budget = trackBudget(mockResult, config);
+    
+    expect(budget.steps.used).toBe(25);
+    expect(budget.steps.limit).toBe(25);
+    expect(budget.steps.exceeded).toBe(true);  // At-limit = exceeded
+    expect(budget.overallExceeded).toBe(true);
+  });
+  
   it('should detect tokens budget exceeded', () => {
     const config: HarnessConfig = {
       enabled: true,
