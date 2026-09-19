@@ -226,6 +226,45 @@ narrows that surface without closing it. Treat scores from untrusted challenges 
 adversarially-prompted models with the same caution you would apply to any self-reported
 benchmark result.
 
+## Harness Mode (Track A)
+
+OASIS includes an **opt-in eval harness** with structured findings, budget tracking, and coverage ledger. Harness mode enforces verify-before-claim discipline and produces machine-readable output for benchmarking rigor.
+
+### Quick Start
+
+```bash
+# Enable harness mode
+export OASIS_HARNESS=true
+
+# With budget limits
+export OASIS_HARNESS_MAX_STEPS=50
+export OASIS_HARNESS_MAX_TOKENS=30000
+export OASIS_HARNESS_COVERAGE=true
+
+# Run benchmark
+oasis run -c sqli-auth-bypass -m claude-sonnet-4-5 -p anthropic
+```
+
+### Output
+
+Harness mode generates additional artifacts:
+
+- `*.findings.json` — Machine-readable findings (confirmed/needs_validation/rejected)
+- `*.coverage-ledger.json` — Attack surface coverage tracking
+- `*.harness.json` — Full harness result with budget status
+
+### Validators
+
+```bash
+# Validate findings schema
+node spec/harness/validate-findings.cjs results/<run-id>.findings.json
+
+# Validate coverage ledger
+node spec/harness/validate-coverage-ledger.cjs results/<run-id>.coverage-ledger.json
+```
+
+See [HARNESS-SPEC.md](spec/harness/HARNESS-SPEC.md) for full documentation, schema details, and Track B roadmap (multi-agent fleet integration).
+
 ## Creating Challenges
 
 Challenges are Docker-based CTF environments. Each challenge needs:
