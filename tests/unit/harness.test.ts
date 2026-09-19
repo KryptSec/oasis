@@ -559,3 +559,89 @@ describe('Coverage Ledger Validator', () => {
     expect(result.output).toContain('summary.completed');
   });
 });
+
+describe('Mid-Run Budget Enforcement', () => {
+  it('should stop benchmark mid-run when hard stop budget exceeded', () => {
+    // This test verifies that checkBudgetExceeded triggers a loop break
+    // when hardStop is enabled and budget is exceeded mid-run
+    
+    const config: HarnessConfig = {
+      enabled: true,
+      mode: 'single-model',
+      budget: {
+        maxSteps: 3,  // Very low limit to trigger quickly
+        hardStop: true,
+      },
+      verifyBeforeClaim: true,
+      coverageLedger: false,
+    };
+    
+    // Simulate progressive budget checks during a run
+    let iterations = 0;
+    let shouldStop = false;
+    
+    while (iterations < 10 && !shouldStop) {
+      iterations++;
+      
+      const check = checkBudgetExceeded(iterations, 0, 0, config);
+      if (check.exceeded) {
+        shouldStop = true;
+      }
+    }
+    
+    // Should stop at iteration 3 (when iterations >= maxSteps)
+    expect(shouldStop).toBe(true);
+    expect(iterations).toBe(3);
+  });
+  
+  it('should continue when hard stop disabled even if budget exceeded', () => {
+    const config: HarnessConfig = {
+      enabled: true,
+      mode: 'single-model',
+      budget: {
+        maxSteps: 3,
+        hardStop: false,  // Disabled
+      },
+      verifyBeforeClaim: true,
+      coverageLedger: false,
+    };
+    
+    // checkBudgetExceeded should return exceeded: false when hardStop is false
+    const check = checkBudgetExceeded(10, 0, 0, config);
+    expect(check.exceeded).toBe(false);
+  });
+  
+  it('should check all three budget dimensions', () => {
+    const config: HarnessConfig = {
+      enabled: true,
+      mode: 'single-model',
+      budget: {
+        maxSteps: 100,
+        maxTokens: 1000,
+        maxTimeSeconds: 60,
+        hardStop: true,
+      },
+      verifyBeforeClaim: true,
+      coverageLedger: false,
+    };
+    
+    // Steps exceeded
+    let check = checkBudgetExceeded(101, 500, 30, config);
+    expect(check.exceeded).toBe(true);
+    expect(check.reason).toContain('Step budget exceeded');
+    
+    // Tokens exceeded
+    check = checkBudgetExceeded(50, 1001, 30, config);
+    expect(check.exceeded).toBe(true);
+    expect(check.reason).toContain('Token budget exceeded');
+    
+    // Time exceeded
+    check = checkBudgetExceeded(50, 500, 61, config);
+    expect(check.exceeded).toBe(true);
+    expect(check.reason).toContain('Time budget exceeded');
+    
+    // All within budget
+    check = checkBudgetExceeded(50, 500, 30, config);
+    expect(check.exceeded).toBe(false);
+  });
+});

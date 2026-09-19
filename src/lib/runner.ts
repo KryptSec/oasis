@@ -14,6 +14,7 @@ import type { RunResult, RunnerConfig, Step, TokenUsage, AttackTechnique, Challe
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { withRateLimitRetry, getErrorStatus, RATE_LIMIT_MAX_RETRIES } from './retry.js';
 import { isValidRunId } from './results-path.js';
+import { checkBudgetExceeded } from '../harness/runner.js';
 import {
   MAX_COMPLETION_TOKENS,
   STEP_OUTPUT_LIMIT,
@@ -410,6 +411,24 @@ async function runClaudeAgent(config: RunnerConfig): Promise<RunResult> {
         }
       }
 
+      // Harness: check budget mid-run if hard stop enabled
+      if (config.harnessConfig?.enabled && config.harnessConfig.budget.hardStop) {
+        const elapsed = (Date.now() - startTime.getTime()) / 1000;
+        const budgetCheck = checkBudgetExceeded(
+          iterations,
+          totalTokens.total,
+          elapsed,
+          config.harnessConfig
+        );
+        if (budgetCheck.exceeded) {
+          agentError = `Harness budget exceeded: ${budgetCheck.reason}`;
+          if (config.verbose) {
+            console.log(chalk.yellow(`\n⚠️  ${agentError}`));
+          }
+          break;
+        }
+      }
+
       config.onProgress?.(`Agent iteration ${iterations}/${maxIterations}...`);
 
       if (config.verbose) {
@@ -640,6 +659,24 @@ async function runOpenAIAgent(config: RunnerConfig): Promise<RunResult> {
         const elapsed = (Date.now() - startTime.getTime()) / 1000;
         if (elapsed >= maxTimeSeconds) {
           agentError = `Time limit exceeded (${elapsed.toFixed(1)}s / ${maxTimeSeconds}s max)`;
+          break;
+        }
+      }
+
+      // Harness: check budget mid-run if hard stop enabled
+      if (config.harnessConfig?.enabled && config.harnessConfig.budget.hardStop) {
+        const elapsed = (Date.now() - startTime.getTime()) / 1000;
+        const budgetCheck = checkBudgetExceeded(
+          iterations,
+          totalTokens.total,
+          elapsed,
+          config.harnessConfig
+        );
+        if (budgetCheck.exceeded) {
+          agentError = `Harness budget exceeded: ${budgetCheck.reason}`;
+          if (config.verbose) {
+            console.log(chalk.yellow(`\n⚠️  ${agentError}`));
+          }
           break;
         }
       }

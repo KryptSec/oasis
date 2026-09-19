@@ -283,6 +283,7 @@ export const runCommand = new Command('run')
         onProgress: (phase: string) => {
           spinnerRun.text = phase;
         },
+        harnessConfig: loadHarnessConfig(),
       };
 
       const result = await runBenchmark(runnerConfig);
