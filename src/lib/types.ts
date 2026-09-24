@@ -310,4 +310,5 @@ export interface RunnerConfig {
   analyzerApiKey?: string;
   verbose?: boolean;
   onProgress?: (phase: string) => void;
+  harnessConfig?: import('../harness/types.js').HarnessConfig;
 }

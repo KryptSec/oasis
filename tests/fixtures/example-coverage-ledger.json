@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "runId": "example-001",
+  "challenge": "sqli-auth-bypass",
+  "timestamp": "2026-09-19T15:00:00.000Z",
+  "units": [
+    {
+      "id": "COV-reconnaissance",
+      "name": "Reconnaissance",
+      "description": "Coverage for reconnaissance attack surface",
+      "surface": "reconnaissance",
+      "state": "completed",
+      "assignedTo": "anthropic:claude-sonnet-4",
+      "startedAt": "2026-09-19T15:00:10.000Z",
+      "completedAt": "2026-09-19T15:02:30.000Z",
+      "findingIds": [],
+      "techniques": ["T1190", "T1595"]
+    },
+    {
+      "id": "COV-authentication",
+      "name": "Authentication",
+      "description": "Coverage for authentication attack surface",
+      "surface": "authentication",
+      "state": "completed",
+      "assignedTo": "anthropic:claude-sonnet-4",
+      "startedAt": "2026-09-19T15:02:35.000Z",
+      "completedAt": "2026-09-19T15:08:00.000Z",
+      "findingIds": ["FND-001"],
+      "techniques": ["T1110", "T1078"]
+    },
+    {
+      "id": "COV-authorization",
+      "name": "Authorization",
+      "description": "Coverage for authorization attack surface",
+      "surface": "authorization",
+      "state": "completed",
+      "assignedTo": "anthropic:claude-sonnet-4",
+      "startedAt": "2026-09-19T15:08:05.000Z",
+      "completedAt": "2026-09-19T15:11:00.000Z",
+      "findingIds": ["FND-002"],
+      "techniques": ["T1078"]
+    },
+    {
+      "id": "COV-injection-vectors",
+      "name": "Injection Vectors",
+      "description": "Coverage for injection-vectors attack surface",
+      "surface": "injection-vectors",
+      "state": "completed",
+      "assignedTo": "anthropic:claude-sonnet-4",
+      "startedAt": "2026-09-19T15:02:40.000Z",
+      "completedAt": "2026-09-19T15:10:00.000Z",
+      "findingIds": ["FND-001"],
+      "techniques": ["T1190"]
+    },
+    {
+      "id": "COV-session-management",
+      "name": "Session Management",
+      "description": "Coverage for session-management attack surface",
+      "surface": "session-management",
+      "state": "planned",
+      "findingIds": [],
+      "techniques": []
+    },
+    {
+      "id": "COV-api-endpoints",
+      "name": "Api Endpoints",
+      "description": "Coverage for api-endpoints attack surface",
+      "surface": "api-endpoints",
+      "state": "deferred",
+      "deferredReason": "Budget limit reached before coverage could begin",
+      "findingIds": [],
+      "techniques": []
+    }
+  ],
+  "summary": {
+    "planned": 1,
+    "inProgress": 0,
+    "completed": 4,
+    "deferred": 1
+  }
+}

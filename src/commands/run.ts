@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import { colors, status, printScoreSummary, printBox } from '../lib/display.js';
 import { calculateKSM, calculateEfficacy, getTokenEfficiency } from '../lib/scoring.js';
 import { getApiKey, getConfigValue, normalizeProvider, getEffectiveProviderUrl, getChallengesDir, getResultsDir } from '../lib/config.js';
-import { runBenchmark, saveRunResult, saveAnalysisResult } from '../lib/runner.js';
+import { runBenchmark, saveRunResult, saveAnalysisResult, processHarnessResult, loadHarnessConfig } from '../lib/runner.js';
 import { analyzeRun } from '../lib/analyzer.js';
 import { printColorReport, printAnalysisSummary } from '../lib/report.js';
 import { ensureDocker, runPreflightChecks, runPostStartChecks, checkApiKey } from '../lib/env-check.js';
@@ -283,6 +283,7 @@ export const runCommand = new Command('run')
         onProgress: (phase: string) => {
           spinnerRun.text = phase;
         },
+        harnessConfig: loadHarnessConfig(),
       };
 
       const result = await runBenchmark(runnerConfig);
@@ -311,7 +312,35 @@ export const runCommand = new Command('run')
       }
 
       // Save results
-      const { jsonPath } = saveRunResult(result, getResultsDir());
+      const resultsDir = getResultsDir();
+      const { jsonPath } = saveRunResult(result, resultsDir);
+      
+      // Process through harness if enabled
+      const harnessConfig = loadHarnessConfig();
+      if (harnessConfig.enabled) {
+        const harnessOutputDir = harnessConfig.outputDir || resultsDir;
+        const harnessResult = processHarnessResult(result, harnessConfig, harnessOutputDir);
+        
+        console.log();
+        console.log(colors.cyan(`${status.success} Harness mode enabled`));
+        console.log(colors.gray(`  Findings: ${harnessResult.findings.findings.length} (${harnessResult.findings.findings.filter(f => f.verdict === 'confirmed').length} confirmed, ${harnessResult.findings.findings.filter(f => f.verdict === 'needs_validation').length} needs validation)`));
+        if (harnessResult.coverageLedger) {
+          console.log(colors.gray(`  Coverage: ${harnessResult.coverageLedger.summary.completed}/${harnessResult.coverageLedger.units.length} surfaces completed`));
+        }
+        if (harnessResult.budget.overallExceeded) {
+          console.log(colors.yellow(`  ${status.warning} Budget exceeded`));
+          if (harnessResult.budget.steps.exceeded) {
+            console.log(colors.yellow(`    Steps: ${harnessResult.budget.steps.used}/${harnessResult.budget.steps.limit}`));
+          }
+          if (harnessResult.budget.tokens.exceeded) {
+            console.log(colors.yellow(`    Tokens: ${harnessResult.budget.tokens.used}/${harnessResult.budget.tokens.limit}`));
+          }
+          if (harnessResult.budget.timeSeconds.exceeded) {
+            console.log(colors.yellow(`    Time: ${harnessResult.budget.timeSeconds.used.toFixed(1)}s/${harnessResult.budget.timeSeconds.limit}s`));
+          }
+        }
+      }
+      
       console.log();
       printBox([
         `  ${colors.gray('Run ID')}   ${colors.yellow(result.id)}`,

@@ -1,0 +1,312 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kryptsec.com/schemas/oasis-harness-findings-v1.json",
+  "title": "OASIS Harness Findings Schema",
+  "description": "Machine-readable findings from offensive security benchmarking runs (single-model or fleet). Adapted from Cloudflare security-audit-skill patterns for CTF/challenge context.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema version"
+    },
+    "runId": {
+      "type": "string",
+      "description": "OASIS run ID or kBot episode ID"
+    },
+    "challenge": {
+      "type": "string",
+      "description": "Challenge ID"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When findings were generated"
+    },
+    "harnessMode": {
+      "type": "string",
+      "enum": ["single-model", "kbot-fleet"],
+      "description": "Which harness mode produced these findings"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/confirmedFinding" },
+          { "$ref": "#/definitions/needsValidationFinding" },
+          { "$ref": "#/definitions/rejectedFinding" }
+        ]
+      },
+      "description": "List of all findings (confirmed, needs_validation, rejected)"
+    }
+  },
+  "required": ["version", "runId", "challenge", "timestamp", "harnessMode", "findings"],
+  "additionalProperties": false,
+  "definitions": {
+    "confirmedFinding": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique finding ID (e.g., 'FND-001')"
+        },
+        "verdict": {
+          "type": "string",
+          "const": "confirmed"
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title of the finding"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "sql-injection",
+            "command-injection",
+            "auth-bypass",
+            "idor",
+            "xxe",
+            "ssrf",
+            "path-traversal",
+            "deserialization",
+            "crypto-failure",
+            "jwt-forgery",
+            "session-hijack",
+            "info-disclosure",
+            "privilege-escalation",
+            "rce",
+            "other"
+          ],
+          "description": "OWASP-aligned vulnerability category"
+        },
+        "owaspCategory": {
+          "type": "string",
+          "description": "OWASP Top 10 2021 mapping (e.g., 'A03:2021 - Injection')"
+        },
+        "trace": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 1,
+              "description": "Step numbers where this finding was discovered/exploited"
+            },
+            "commands": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Exact commands that demonstrated the vulnerability"
+            },
+            "endpoints": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Target endpoints or paths involved"
+            }
+          },
+          "required": ["steps", "commands"],
+          "additionalProperties": false
+        },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "payload": {
+              "type": "string",
+              "description": "The actual payload or exploit string used"
+            },
+            "method": {
+              "type": "string",
+              "description": "HTTP method or technique (GET, POST, etc.)"
+            },
+            "proofOutput": {
+              "type": "string",
+              "description": "Output snippet proving exploitation (e.g., flag, error message)"
+            }
+          },
+          "required": ["payload", "proofOutput"],
+          "additionalProperties": false
+        },
+        "intendedBehavior": {
+          "type": "string",
+          "description": "What the target was supposed to do (makes the vulnerability legible)"
+        },
+        "confidence": {
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "string",
+              "enum": ["low", "medium", "high"]
+            },
+            "reason": {
+              "type": "string",
+              "description": "Why this confidence level"
+            }
+          },
+          "required": ["level", "reason"],
+          "additionalProperties": false
+        },
+        "severity": {
+          "type": "object",
+          "properties": {
+            "likelihood": {
+              "type": "string",
+              "enum": ["informational", "low", "medium", "high", "critical"]
+            },
+            "impact": {
+              "type": "string",
+              "enum": ["informational", "low", "medium", "high", "critical"]
+            },
+            "overallSeverity": {
+              "type": "string",
+              "enum": ["informational", "low", "medium", "high", "critical"]
+            }
+          },
+          "required": ["likelihood", "impact", "overallSeverity"],
+          "additionalProperties": false
+        },
+        "remediation": {
+          "type": "string",
+          "description": "How to fix this vulnerability"
+        },
+        "verifiedBy": {
+          "type": "string",
+          "description": "Who/what verified this finding (agent ID, human reviewer, etc.)"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When verification occurred"
+        }
+      },
+      "required": [
+        "id",
+        "verdict",
+        "title",
+        "category",
+        "owaspCategory",
+        "trace",
+        "execution",
+        "intendedBehavior",
+        "confidence",
+        "severity",
+        "remediation",
+        "verifiedBy",
+        "verifiedAt"
+      ],
+      "additionalProperties": false
+    },
+    "needsValidationFinding": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string",
+          "const": "needs_validation"
+        },
+        "title": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "sql-injection",
+            "command-injection",
+            "auth-bypass",
+            "idor",
+            "xxe",
+            "ssrf",
+            "path-traversal",
+            "deserialization",
+            "crypto-failure",
+            "jwt-forgery",
+            "session-hijack",
+            "info-disclosure",
+            "privilege-escalation",
+            "rce",
+            "other"
+          ]
+        },
+        "owaspCategory": {
+          "type": "string"
+        },
+        "trace": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 1
+            },
+            "commands": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["steps"],
+          "additionalProperties": false
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why this finding needs validation (e.g., 'insufficient proof', 'ambiguous output')"
+        },
+        "discoveredBy": {
+          "type": "string",
+          "description": "Which agent/role discovered this potential finding"
+        }
+      },
+      "required": ["id", "verdict", "title", "category", "trace", "reason", "discoveredBy"],
+      "additionalProperties": false
+    },
+    "rejectedFinding": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string",
+          "const": "rejected"
+        },
+        "title": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "sql-injection",
+            "command-injection",
+            "auth-bypass",
+            "idor",
+            "xxe",
+            "ssrf",
+            "path-traversal",
+            "deserialization",
+            "crypto-failure",
+            "jwt-forgery",
+            "session-hijack",
+            "info-disclosure",
+            "privilege-escalation",
+            "rce",
+            "other"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why this finding was rejected (e.g., 'false positive', 'misinterpreted output', 'defense-in-depth gap')"
+        },
+        "rejectedBy": {
+          "type": "string",
+          "description": "Who/what rejected this finding"
+        },
+        "rejectedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "verdict", "title", "category", "reason", "rejectedBy", "rejectedAt"],
+      "additionalProperties": false
+    }
+  }
+}
