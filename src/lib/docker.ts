@@ -21,38 +21,148 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+export interface PullRetryOptions {
+  /** Max attempts for a transient failure (default 3). */
+  maxAttempts?: number;
+  /** Base delay for exponential backoff, in ms (default 5000). */
+  baseDelayMs?: number;
+  /** Called between retries so callers can surface progress. */
+  onRetry?: (attempt: number, maxAttempts: number, delayMs: number, reason: string) => void;
+  /** Injectable sleep, for tests. */
+  sleep?: (ms: number) => void;
+}
+
+/** Default attempt count for transient registry failures. */
+export const DOCKER_PULL_MAX_ATTEMPTS = 3;
+/** Default backoff base for transient registry failures. */
+export const DOCKER_PULL_BASE_DELAY_MS = 5_000;
+
 /**
- * Pull a Docker image. Tries native platform first, falls back to linux/amd64
- * if the image has no matching manifest (common for challenge images on Apple Silicon).
+ * Classify a docker pull failure.
+ *  - 'manifest'  -> image has no native-platform manifest; retry with linux/amd64
+ *  - 'transient' -> registry/network hiccup; worth retrying the same command
+ *  - 'fatal'     -> auth/not-found/etc; retrying will not help
+ */
+export function classifyPullError(err: unknown): 'manifest' | 'transient' | 'fatal' {
+  const eObj = err != null && typeof err === 'object' ? err as Record<string, unknown> : {};
+  const msg = String(eObj.stderr || eObj.message || '');
+
+  if (msg.includes('no matching manifest') || msg.includes('no match for platform')) {
+    return 'manifest';
+  }
+
+  const transientSignals = [
+    '503', 'Service Unavailable',
+    '502', 'Bad Gateway',
+    '504', 'Gateway Time-out', 'Gateway Timeout',
+    '429', 'Too Many Requests', 'toomanyrequests',
+    'connection refused', 'connection reset',
+    'TLS handshake timeout', 'i/o timeout',
+    'context deadline exceeded',
+    'unexpected EOF', 'EOF',
+    'temporary failure',
+  ];
+  if (transientSignals.some(s => msg.includes(s))) {
+    return 'transient';
+  }
+
+  return 'fatal';
+}
+
+/** Run a docker image pull once. Throws the raw error on failure. */
+function dockerPullOnce(image: string, platform?: string, onProgress?: (line: string) => void): void {
+  const args = ['pull'];
+  if (platform) args.push('--platform', platform);
+  args.push(image);
+  execFileSync('docker', args, {
+    stdio: onProgress ? 'inherit' : 'pipe',
+    encoding: 'utf-8',
+  });
+}
+
+/**
+ * Pull a Docker image, retrying transient registry failures and falling back to
+ * linux/amd64 when the image has no native manifest (common for challenge images
+ * on Apple Silicon).
+ *
+ * Retries cover the flaky-registry cases that otherwise abort a benchmark
+ * mid-setup: 5xx from Docker Hub, rate limiting, and network timeouts. Errors
+ * that cannot succeed on retry (auth failures, missing repos) fail fast so a bad
+ * image reference is not hammered three times.
+ *
  * Returns true if the amd64 fallback was used.
  */
-export function pullImage(image: string, onProgress?: (line: string) => void): boolean {
+export function pullImage(
+  image: string,
+  onProgress?: (line: string) => void,
+  options: PullRetryOptions = {},
+): boolean {
+  const maxAttempts = options.maxAttempts ?? DOCKER_PULL_MAX_ATTEMPTS;
+  const baseDelayMs = options.baseDelayMs ?? DOCKER_PULL_BASE_DELAY_MS;
+  const sleep = options.sleep ?? sleepSync;
+
   if (onProgress) {
     onProgress(`Pulling ${image}...`);
   }
 
-  try {
-    execFileSync('docker', ['pull', image], {
-      stdio: onProgress ? 'inherit' : 'pipe',
-      encoding: 'utf-8',
-    });
-    return false;
-  } catch (err: unknown) {
-    const eObj = err != null && typeof err === 'object' ? err as Record<string, unknown> : {};
-    const msg = String(eObj.stderr || eObj.message || '');
-    if (!msg.includes('no matching manifest') && !msg.includes('no match for platform')) {
-      throw err;
+  // --- Phase 1: native platform pull, retrying transient failures ---
+  let nativeErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      dockerPullOnce(image, undefined, onProgress);
+      return false;
+    } catch (err) {
+      const kind = classifyPullError(err);
+
+      if (kind === 'manifest') {
+        nativeErr = err;
+        break; // fall through to the amd64 fallback below
+      }
+      if (kind === 'fatal') {
+        throw err;
+      }
+
+      nativeErr = err;
+      if (attempt === maxAttempts) break;
+
+      const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+      options.onRetry?.(attempt, maxAttempts, delayMs, String(err instanceof Error ? err.message : err));
+      if (onProgress) {
+        onProgress(`Pull failed (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs / 1000}s...`);
+      }
+      sleep(delayMs);
     }
   }
 
-  // Fallback: pull with explicit amd64 platform
+  // Exhausted retries on a transient error: surface it rather than masking the
+  // real cause behind a platform fallback.
+  if (nativeErr && classifyPullError(nativeErr) === 'transient') {
+    throw nativeErr;
+  }
+
+  // --- Phase 2: linux/amd64 fallback (no-matching-manifest case) ---
   if (onProgress) {
     onProgress(`Pulling ${image} (linux/amd64 fallback)...`);
   }
-  execFileSync('docker', ['pull', '--platform', 'linux/amd64', image], {
-    stdio: onProgress ? 'inherit' : 'pipe',
-    encoding: 'utf-8',
-  });
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      dockerPullOnce(image, 'linux/amd64', onProgress);
+      return true;
+    } catch (err) {
+      const kind = classifyPullError(err);
+      if (kind === 'fatal' || attempt === maxAttempts) {
+        throw err;
+      }
+      const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+      options.onRetry?.(attempt, maxAttempts, delayMs, String(err instanceof Error ? err.message : err));
+      if (onProgress) {
+        onProgress(`Pull failed (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs / 1000}s...`);
+      }
+      sleep(delayMs);
+    }
+  }
+
   return true;
 }
 
@@ -115,9 +225,15 @@ export function pullAndStartContainers(
   onProgress?: (msg: string) => void,
 ): void {
   onProgress?.(`Pulling ${spec.targetImage}...`);
-  const targetFallback = pullImage(spec.targetImage);
+  const targetFallback = pullImage(spec.targetImage, onProgress ? (m) => onProgress(m) : undefined, {
+    onRetry: (attempt, max, delay, reason) =>
+      onProgress?.(`Retrying ${spec.targetImage} (${attempt}/${max}) in ${delay / 1000}s: ${reason}`),
+  });
   onProgress?.(`Pulling ${spec.kaliImage}...`);
-  const kaliFallback = pullImage(spec.kaliImage);
+  const kaliFallback = pullImage(spec.kaliImage, onProgress ? (m) => onProgress(m) : undefined, {
+    onRetry: (attempt, max, delay, reason) =>
+      onProgress?.(`Retrying ${spec.kaliImage} (${attempt}/${max}) in ${delay / 1000}s: ${reason}`),
+  });
 
   const platforms: PlatformOverrides = {};
   if (targetFallback) platforms.target = 'linux/amd64';
