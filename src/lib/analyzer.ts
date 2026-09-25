@@ -20,7 +20,7 @@ import {
   fallbackOverallScore,
 } from './scoring.js';
 import { AnalysisResponseSchema } from './schemas.js';
-import { MAX_COMPLETION_TOKENS, ANALYZER_OUTPUT_LIMIT } from './constants.js';
+import { MAX_COMPLETION_TOKENS, ANALYZER_OUTPUT_LIMIT, ANALYZER_TIMEOUT_MS } from './constants.js';
 import { withRateLimitRetry } from './retry.js';
 import { isAnthropicProvider, resolveProvider } from './providers.js';
 import { normalizeProvider } from './config.js';
@@ -501,6 +501,8 @@ async function callAnthropicAnalyzer(
       messages: [{ role: 'user', content: prompt }],
     }),
     'Analysis',
+    false,
+    ANALYZER_TIMEOUT_MS,
   );
   const textContent = response.content.find(c => c.type === 'text');
   if (!textContent || textContent.type !== 'text') {
@@ -524,6 +526,8 @@ async function callOpenAIAnalyzer(
       ],
     }),
     'Analysis',
+    false,
+    ANALYZER_TIMEOUT_MS,
   );
   const content = response.choices[0]?.message?.content;
   if (!content) {

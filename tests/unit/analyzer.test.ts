@@ -339,3 +339,23 @@ describe('parseAnalysisResponse', () => {
     expect(result.strategy.overallScore).toBe(42);
   });
 });
+
+// =============================================================================
+// Analyzer timeout budget
+// =============================================================================
+
+describe('ANALYZER_TIMEOUT_MS', () => {
+  it('is larger than the generic API timeout (analyses embed full attack chains)', async () => {
+    const { ANALYZER_TIMEOUT_MS } = await import('../../src/lib/constants.js');
+    const { DEFAULT_API_TIMEOUT_MS } = await import('../../src/lib/retry.js');
+
+    expect(ANALYZER_TIMEOUT_MS).toBeGreaterThan(DEFAULT_API_TIMEOUT_MS);
+  });
+
+  it('is a positive finite number of milliseconds', async () => {
+    const { ANALYZER_TIMEOUT_MS } = await import('../../src/lib/constants.js');
+
+    expect(Number.isFinite(ANALYZER_TIMEOUT_MS)).toBe(true);
+    expect(ANALYZER_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+});
