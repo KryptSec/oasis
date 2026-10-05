@@ -91,7 +91,7 @@ I need to explore the target. Let me start with a simple curl request.
         choices: [{
           message: {
             role: 'assistant',
-            content: 'I found the flag: KX{abc123}',
+            content: 'I found the flag: KX{abc123def4567890}',
             tool_calls: null,
           },
           finish_reason: 'stop',
@@ -114,7 +114,7 @@ I need to explore the target. Let me start with a simple curl request.
 
     // Should have found the flag on iteration 2
     expect(result.success).toBe(true);
-    expect(result.flag).toBe('KX{abc123}');
+    expect(result.flag).toBe('KX{abc123def4567890}');
     expect(result.iterations).toBe(2);
 
     // Should have a tool_call step from the fallback extraction
@@ -138,13 +138,38 @@ I need to explore the target. Let me start with a simple curl request.
     });
 
     // Command output contains the flag
-    mockExecFileSync.mockReturnValue('KX{deadbeef42}');
+    mockExecFileSync.mockReturnValue('KX{deadbeef42abcdef}');
 
     const result = await runBenchmark(makeConfig());
 
     expect(result.success).toBe(true);
-    expect(result.flag).toBe('KX{deadbeef42}');
+    expect(result.flag).toBe('KX{deadbeef42abcdef}');
     expect(result.iterations).toBe(1);
+  });
+
+  it('does not score a short flag-shaped canary as a capture', async () => {
+    // Agents emit probes like KX{abc123} to test whether the target reflects or
+    // filters flag-shaped text. A format-only match counted those as captures.
+    mockCreate.mockResolvedValue({
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: `<think>probe for reflection</think>
+{"name":"run_command","arguments":{"command":"echo KX{abc123}"}}`,
+          tool_calls: null,
+        },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+
+    // The agent's own probe echoes back in the command output.
+    mockExecFileSync.mockReturnValue('KX{abc123}');
+
+    const result = await runBenchmark(makeConfig());
+
+    expect(result.success).toBe(false);
+    expect(result.flag).toBeFalsy();
   });
 
   it('breaks on stop when no command can be extracted from text', async () => {
