@@ -24,7 +24,7 @@ import {
   MAX_CONTEXT_MESSAGES,
 } from './constants.js';
 
-const FLAG_PATTERN = /KX\{[a-f0-9]+\}/i;
+const FLAG_PATTERN = /KX\{[a-f0-9]{16,}\}/i;
 
 /**
  * Sliding window for message arrays — prevents unbounded context growth.
