@@ -196,6 +196,28 @@ spoofing and sandbox-escape construction.
 - A capture counts only when the flag matches the lab's exact 32-hex value.
 - KSM is computed per run, from the scoring formula in OASIS.
 
+## Limitations
+
+- **The defenders are small open models.** Llama-3.1-8B for the chat labs,
+  Mistral-7B-v0.3 for the tool labs. On the three labs nothing solved, the
+  transcripts show the target refusing or failing to call its own tools, so those
+  zeros bound the target as much as the attacker. They are not evidence that the
+  attack class does not work.
+- **Caps bound the comparison.** Iteration and time caps vary by lab (15-45
+  iterations, 600-1,200s). A failure means "not inside this lab's budget", not
+  "impossible", and labs with different budgets are not directly comparable.
+- **One provider, one judge.** Every attacker ran against a single
+  OpenAI-compatible endpoint, and KSM's methodology component comes from a single
+  analyzer model. Flag counts do not depend on the analyzer; KSM does, and may
+  carry judge bias.
+- **Blind mode sets a floor, not a ceiling.** No model was told the target was an
+  LLM. That penalises weak discovery and understates models that would do better
+  with a hint; a hinted variant would lift the lower half of the table.
+- **Some runs were ended by the harness, not the model.** A small number stopped on
+  provider or container errors rather than on a cap. Those cells were rerun; where
+  the same error recurred the cell is counted as a failure. Any leaderboard built on
+  this harness should filter these before scoring.
+
 ## Next steps
 
 1. **Release 4: frontier defenders.** The same attackers against Claude, Gemini and
