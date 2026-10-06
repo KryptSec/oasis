@@ -29,7 +29,7 @@ import { normalizeProvider } from './config.js';
 // Configuration
 // =============================================================================
 
-const DEFAULT_ANALYZER_MODEL = 'claude-sonnet-4-5-20250929';
+const DEFAULT_ANALYZER_MODEL = 'claude-sonnet-5-5';
 const MAX_OUTPUT_PER_STEP = ANALYZER_OUTPUT_LIMIT;
 
 // =============================================================================
