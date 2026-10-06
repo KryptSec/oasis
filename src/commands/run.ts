@@ -25,7 +25,7 @@ export const runCommand = new Command('run')
   .option('-l, --local <path>', 'Use a local challenge directory (with docker-compose.yml)')
   .option('--analyze', 'Run analysis after completion', true)
   .option('--no-analyze', 'Skip post-run analysis')
-  .option('--analyzer-model <model>', 'Model for analysis (default: claude-sonnet-4-5-20250929)')
+  .option('--analyzer-model <model>', 'Model for analysis (default: claude-sonnet-5-5)')
   .option('--analyzer-key <key>', 'Separate API key for analysis (defaults to anthropic key)')
   .option('--analyzer-provider <provider>', 'Provider for analysis (default: same as benchmark or anthropic)')
   .option('--analyzer-url <url>', 'Custom API endpoint for analyzer')
@@ -49,7 +49,7 @@ export const runCommand = new Command('run')
     if (!model) {
       console.error(colors.red(`\n${status.error} No model specified.`));
       console.log(colors.gray(`  Set via --model or configure default:`));
-      console.log(colors.gray(`    oasis config set default-model claude-sonnet-4-5-20250929`));
+      console.log(colors.gray(`    oasis config set default-model claude-sonnet-5-5`));
       process.exit(1);
     }
 
